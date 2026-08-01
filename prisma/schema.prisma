@@ -1,0 +1,132 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ClientType {
+  PF
+  PJ
+}
+
+model Client {
+  id            String        @id @default(cuid())
+  name          String
+  type          ClientType
+  document      String?
+  street        String?
+  number        String?
+  complement    String?
+  neighborhood  String?
+  city          String?
+  state         String?
+  zipCode       String?
+  accountStatus String        @default("ATIVO")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  equipments    Equipment[]
+  serviceOrders ServiceOrder[]
+
+  @@map("clients")
+}
+
+model Equipment {
+  id            String        @id @default(cuid())
+  clientId      String
+  client        Client        @relation(fields: [clientId], references: [id])
+  type          String
+  model         String?
+  serialNumber  String?
+  physicalState String        @default("ATIVO")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  serviceOrders ServiceOrder[]
+
+  @@map("equipment")
+}
+
+model ServiceOrder {
+  id              String           @id @default(cuid())
+  protocol        String           @unique
+  clientId        String
+  equipmentId     String
+  status          String
+  priority        String           @default("MEDIA")
+  assignedUserId  String?
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  closedAt        DateTime?
+  client          Client           @relation(fields: [clientId], references: [id])
+  equipment       Equipment        @relation(fields: [equipmentId], references: [id])
+  technicalReport TechnicalReport?
+
+  @@map("service_orders")
+}
+
+model TechnicalReport {
+  id                  String           @id @default(cuid())
+  serviceOrderId      String           @unique
+  serviceOrder        ServiceOrder     @relation(fields: [serviceOrderId], references: [id])
+  companyName         String?
+  companyDocument     String?
+  companyContact      String?
+  companyAddress      String?
+  companyEmail        String?
+  companySite         String?
+  technicianName      String?
+  technicianRegistry  String?
+  cityDate            DateTime?
+  clientReport        String?
+  testsExecuted       String?
+  powerStageStatus    String?
+  usageTimeEstimate   String?
+  probableCause       String?
+  technicalConclusion String?
+  noRepair            Boolean          @default(false)
+  noRepairReason      String?
+  partsValue          Decimal?
+  laborValue          Decimal?
+  totalValue          Decimal?
+  version             Int              @default(1)
+  htmlSnapshot        String?
+  printedAt           DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  components          ReportComponent[]
+  photos              ReportPhoto[]
+
+  @@map("technical_reports")
+}
+
+model ReportComponent {
+  id                String          @id @default(cuid())
+  technicalReportId String
+  technicalReport   TechnicalReport @relation(fields: [technicalReportId], references: [id])
+  description       String?
+  quantity          Int?
+  unitPrice         Decimal?
+  price             Decimal?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@map("report_components")
+}
+
+model ReportPhoto {
+  id                String          @id @default(cuid())
+  technicalReportId String
+  technicalReport   TechnicalReport @relation(fields: [technicalReportId], references: [id])
+  storagePath       String?
+  caption           String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@map("report_photos")
+}

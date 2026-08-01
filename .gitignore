@@ -1,0 +1,32 @@
+# Node modules and build output
+node_modules/
+dist/
+
+# Environment files
+.env
+.env.*
+
+# Prisma generated client
+generated/prisma/
+
+# Local databases and logs
+prisma/dev.db
+logs/
+coverage/
+
+# System files and caches
+.DS_Store
+.vscode/
+.idea/
+.npm/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+.vite/
+.cache/
+
+# Local workspace and assistant state
+.agents/
+.claude/
+.windsurf/
