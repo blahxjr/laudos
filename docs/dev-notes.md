@@ -287,6 +287,157 @@ Para manter o repositório GitHub (`https://github.com/blahxjr/laudos`) sempre a
 
 Seguindo esse fluxo, Copilot passa a atuar como **assistente de versionamento**, garantindo que cada bloco de evolução do Assist Tech Laudos esteja bem documentado e enviado ao GitHub com mensagens de commit claras e consistentes.
 
+## Análise de alinhamento com o roteiro proposto
+
+O projeto já possui uma base sólida para o núcleo operacional: clientes, equipamentos, ordens de serviço, laudos técnicos, catálogo de serviços/peças e faturamento via invoice. A documentação atual está alinhada com essa realidade, mas ainda há um gap importante entre a visão de produto e a maturidade da experiência de uso, principalmente no que diz respeito à edição, impressão e consistência do laudo técnico.
+
+Os próximos passos devem priorizar:
+
+- consolidar o fluxo real de uso da assistência, do cadastro ao faturamento;
+- elevar a qualidade do laudo técnico como documento profissional e não apenas como tela de visualização;
+- preparar a base para perfis, testes e integração com comunicação/WhatsApp sem perder a estabilidade do core.
+
+## Roteiro de evolução do projeto
+
+O desenvolvimento deve seguir uma progressão em fases, preservando o foco no fluxo operacional real de assistência técnica.
+
+### Fase 1 — Polir núcleo ERP + laudo
+
+Objetivo: garantir que o ciclo diário funcione de ponta a ponta.
+
+- Validar o fluxo: cliente → equipamento → OS → serviços/peças → laudo → invoice → impressão.
+- Revisar textos e labels do laudo para deixá-los mais próximos de modelos profissionais de assistência.
+- Garantir que o laudo inclua: identificação da assistência, técnico, cliente, equipamento, defeito, testes, diagnóstico, conclusão, serviços/peças aplicados, resumo financeiro e fotos.
+
+### Fase 2 — Usuários, perfis e segurança
+
+Objetivo: preparar o sistema para uso multiusuário e controle básico de acesso.
+
+- Modelar `User` com perfis como `ADMIN`, `TECH`, `FINANCE` e `COMM`.
+- Restringir ações críticas por perfil, especialmente faturamento, edição de laudo e gestão de catálogos.
+- Preparar base para multi-tenant com `companyId`/`tenantId` em entidades centrais.
+
+### Fase 3 — Testes de integração e observabilidade
+
+Objetivo: proteger o core do sistema e evitar regressões.
+
+- Criar testes integrados cobrindo cliente + equipamento + OS + itens + invoice + laudo.
+- Cobrir operações básicas do módulo de comunicação (`Conversation` e `Message`).
+- Instrumentar logs estruturados nas rotas críticas com `requestId`, payload relevante e tratamento de erro.
+
+### Fase 4 — POC de integração com WhatsApp (texto)
+
+Objetivo: explorar o diferencial omnichannel com escopo recortado.
+
+- Escolher um gateway inicial para WhatsApp, preferindo uma abordagem simples e viável para a primeira versão.
+- Implementar fluxo mínimo: cliente envia “Quero abrir uma OS” e o sistema cria uma OS básica vinculada ao número de telefone.
+- Persistir interações em `Message` e documentar a decisão na memória do projeto.
+
+### Fase 5 — Avaliar CRM WhatsApp open-source
+
+Objetivo: estudar se vale usar um CRM pronto como camada de atendimento.
+
+- Avaliar soluções como `wacrm` e `Chatwoot` para decidir se a integração deve ser direta ou via serviço separado.
+- Priorizar a integração por webhooks/REST em vez de acoplamento forte com a UI web.
+
+### Fase 6 — IA e templates de laudo
+
+Objetivo: elevar produtividade do técnico sem perder responsabilidade técnica.
+
+- Migrar a sugestão de laudo para um LLM externo com prompt estruturado, mantendo o técnico como responsável final.
+- Criar templates de laudo por tipo de atendimento, como eletrônicos, redes e segurança.
+- Documentar explicitamente que a IA é assistiva e não substitui validação profissional.
+
+## Modelo de laudo técnico recomendado
+
+A interface e o documento de laudo devem seguir uma estrutura profissional e prática, alinhada ao fluxo de assistência técnica.
+
+### Seção A — Cabeçalho da assistência
+
+- Nome comercial da assistência.
+- Razão social e CPF/CNPJ.
+- Endereço completo e contatos.
+- Logotipo, quando disponível.
+
+### Seção B — Identificação do laudo e do técnico
+
+- Título do documento.
+- Número do laudo/OS.
+- Data de emissão.
+- Nome do técnico responsável e registro profissional, quando aplicável.
+
+### Seção C — Dados do cliente e do equipamento
+
+- Dados do cliente: nome, documento, endereço e telefone.
+- Dados do equipamento: tipo, marca, modelo, número de série, acessórios e histórico breve.
+
+### Seção D — Dados da Ordem de Serviço
+
+- Número da OS/protocolo.
+- Data de abertura e conclusão.
+- Situação atual.
+- Local do atendimento e responsável pela execução.
+
+### Seção E — Relato do defeito e condições ao receber
+
+- Campo livre para relato do cliente.
+- Observações sobre sintomas, condições de uso e contexto de recebimento.
+
+### Seção F — Testes realizados e procedimentos
+
+- Lista estruturada de testes executados.
+- Resultados principais de cada teste.
+
+### Seção G — Diagnóstico técnico
+
+- Diagnóstico objetivo e técnico.
+- Recomendações claras, como substituição de peça ou inviabilidade econômica de reparo.
+
+### Seção H — Conclusão e parecer
+
+- Resumo final do estado do equipamento.
+- Orientações sobre uso, manutenção ou próximos passos.
+
+### Seção I — Peças, serviços e materiais aplicados
+
+- Tabela com itens do catálogo, quantidade, valor unitário e valor total.
+- Ligação direta com os itens da OS e com o ERP interno.
+
+### Seção J — Resumo financeiro
+
+- Subtotal, desconto e total final.
+- Condições de pagamento e situação da cobrança.
+
+### Seção K — Fotos e anexos
+
+- Fotos antes/depois, peças danificadas e ambiente relevante.
+- anexos complementares, quando houver.
+
+### Seção L — Assinaturas e responsabilidade
+
+- Assinatura do técnico responsável.
+- Assinatura do cliente, quando aplicável.
+- Declaração de responsabilidade e limitações do laudo.
+
+## Diretrizes de layout e UX para o laudo
+
+A experiência de preenchimento deve ser prática, limpa e alinhada ao design system do projeto.
+
+- Dividir o formulário/documento em blocos bem identificados, com títulos claros.
+- Usar layout em duas colunas para dados básicos e uma coluna única para textos longos.
+- Reaproveitar o design system atual para manter consistência visual entre laudo, OS e demais módulos.
+- Incluir instruções curtas nos campos de texto para orientar o preenchimento.
+- Permitir salvar rascunho com estado explícito de edição/finalizado.
+- Garantir que a visualização de impressão fique limpa e adequada para A4.
+
+## Diretrizes para comunicação e WhatsApp
+
+O laudo técnico deve ser pensado também como artefato de comunicação.
+
+- O resumo do laudo deve poder ser compartilhado por mensagens de WhatsApp.
+- O documento deve trazer informações financeiras claras para aprovação de orçamento ou confirmação de conclusão.
+- A arquitetura deve favorecer integração por webhooks/REST e não depender de uma UI web para o fluxo principal.
+
 ## Diagnóstico de coerência documental — 2026-08-02
 
 ### Resumo executivo
