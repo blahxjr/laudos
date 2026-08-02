@@ -58,6 +58,76 @@ O projeto ainda precisa evoluir em algumas áreas de interface, cobertura de tes
   - Próximos passos: expandir atividades automáticas para cobrança, envio por WhatsApp e integração com IA de diagnóstico.
   - Tags: `#os`, `#frontend`, `#backend`, `#prisma`, `#ux`
 
+- **2026-08-02** — Sprint Passo 2 concluída: estoque integrado ao consumo de peças nas OS.
+  - Arquivos tocados: `prisma/schema.prisma`, `prisma/migrations/20260802161724_add_part_stock_fields/`, `src/server.ts`, `src/server/stockFlow.ts`, `src/frontend/ServiceOrdersPage.tsx`, `src/frontend/CatalogPage.tsx`, `scripts/seed.ts`, `tests/stockFlow.test.mjs`, `tests/viteProxy.test.mjs`
+  - Resumo: peças do catálogo passaram a ter `stockQuantity` e `minimumStock`; ao adicionar, editar ou remover itens do tipo `PARTE` em uma OS, o saldo é ajustado automaticamente, bloqueando operações que deixariam o estoque negativo e exibindo alerta visual de baixo estoque na UI.
+  - Impacto: o fluxo operacional de OS agora consome estoque real da oficina, preservando a consistência entre catálogo, ordens e inventário.
+  - Próximos passos: evoluir para histórico de movimentação de estoque, reserva de peças e integração com compras/fornecedores.
+  - Tags: `#estoque`, `#os`, `#frontend`, `#backend`, `#prisma`
+
+- **2026-08-02** — Sprint Passo 3 concluída: dashboard operacional simples.
+  - Arquivos tocados: `src/server.ts`, `src/server/dashboard.ts`, `src/frontend/DashboardPage.tsx`, `src/frontend/main.tsx`, `vite.config.ts`, `tests/dashboardOverview.test.mjs`
+  - Resumo: criado endpoint `GET /dashboard/overview` com resumo de ordens por status, total de laudos, faturamento total e valores acumulados nos últimos 30 dias. A rota `/dashboard` agora exibe um painel inicial com cards e lista simples, usando o design system existente.
+  - Impacto: a equipe passa a ter uma visão operacional rápida sem depender de gráficos complexos ou de integrações externas.
+  - Próximos passos: adicionar filtros de período, gráficos simples e métricas por técnico/cliente.
+  - Tags: `#dashboard`, `#os`, `#laudos`, `#financeiro`
+
+- **2026-08-02** — Sprint Passo 4 concluída: resumo de OS/laudo pronto para WhatsApp.
+  - Arquivos tocados: `src/frontend/TechnicalReportTabs.tsx`, `src/frontend/whatsAppSummary.ts`, `tests/whatsAppSummary.test.mjs`
+  - Resumo: adicionada função `buildWhatsAppSummary` que monta um texto objetivo com cliente, protocolo da OS, equipamento, diagnóstico, conclusão, valor total e link para o laudo completo. O botão “Copiar resumo para WhatsApp” copia o texto para a área de transferência e exibe feedback simples.
+  - Impacto: o técnico consegue preparar rapidamente uma mensagem para WhatsApp/Telegram sem integrar API externa nem sair do fluxo de laudo.
+  - Próximos passos: evoluir para templates por tipo de atendimento e envio automático via canal integrado.
+  - Tags: `#whatsapp`, `#telegram`, `#laudos`, `#ux`
+
+- **2026-08-02** — Sprint Passo 7 iniciada: POC de envio via gateway/API externo.
+  - Arquivos tocados: `src/whatsappGateway.ts`, `src/server.ts`, `src/frontend/TechnicalReportTabs.tsx`, `tests/whatsappGateway.test.mjs`, `docs/dev-notes.md`, `docs/whatsapp-plan.md`
+  - Resumo: criado helper genérico para envio de texto via gateway, rota `POST /communications/whatsapp/send-summary` no backend e novo botão na tela de laudo para disparar o resumo curto pelo gateway. O fluxo atual usa o número de WhatsApp do cliente quando disponível e não implementa recebimento nem mídia ainda.
+  - Impacto: o ERP passa a ter um canal simples para disparar mensagens de resumo para clientes sem depender do fluxo manual de cópia/colar.
+  - Próximos passos: validar com um gateway real em ambiente de dev, ajustar o corpo do request ao provider escolhido e expandir para webhooks de recebimento.
+  - Tags: `#whatsapp`, `#gateway`, `#comunicacao`, `#backend`, `#frontend`
+
+- **2026-08-02** — Micro Sprint 1 concluído: configurações WhatsApp persistidas no backend.
+  - Arquivos tocados: `prisma/schema.prisma`, `prisma/migrations/20260802190000_add_app_settings/migration.sql`, `src/server/settingsService.ts`, `src/server/whatsappSettingsRoutes.ts`, `src/server.ts`, `tests/whatsappSettings.test.mjs`, `docs/dev-notes.md`, `PROJECT_MEMORY.md`
+  - Resumo: adicionado modelo `AppSetting` para configurações globais e implementados endpoints `GET/PUT /settings/whatsapp` com validação de URL/telefone e resposta sem exposição de tokens (somente flags de presença).
+  - Impacto: o backend passa a suportar gestão centralizada de credenciais/configurações de integração WhatsApp sem depender de UI neste estágio.
+  - Próximos passos: criar tela administrativa para editar settings e adicionar teste de conexão com gateway no fluxo de configuração.
+  - Tags: `#whatsapp`, `#configuracao`, `#backend`, `#prisma`, `#seguranca`
+
+- **2026-08-02** — Micro Sprint 2 concluído: tela de Configurações > WhatsApp no frontend.
+  - Arquivos tocados: `src/frontend/SettingsPage.tsx`, `src/frontend/main.tsx`, `vite.config.ts`, `tests/viteProxy.test.mjs`, `docs/dev-notes.md`, `PROJECT_MEMORY.md`
+  - Resumo: criada página de configurações com formulário para URLs, tokens e telefone padrão; leitura via `GET /settings/whatsapp` e persistência via `PUT /settings/whatsapp`, com estados de loading, sucesso e erro.
+  - Impacto: operação passa a editar a configuração de integração WhatsApp diretamente na UI, mantendo tokens mascarados e persistência no backend.
+  - Próximos passos: adicionar ações de teste de conexão e envio de mensagem de teste no mesmo módulo de configurações.
+  - Tags: `#whatsapp`, `#configuracao`, `#frontend`, `#ux`, `#integracao`
+
+- **2026-08-02** — Micro Sprint 3 concluído: teste de conexão e mensagem de teste WhatsApp.
+  - Arquivos tocados: `src/server/whatsappSettingsRoutes.ts`, `src/whatsappGateway.ts`, `src/frontend/SettingsPage.tsx`, `tests/whatsappSettings.test.mjs`, `docs/dev-notes.md`, `PROJECT_MEMORY.md`
+  - Resumo: implementados endpoints de teste de conexão (`POST /settings/whatsapp/test-connection`) e envio de mensagem de teste (`POST /settings/whatsapp/send-test-message`), com interface visual na tela de configurações para disparo e leitura de feedback.
+  - Impacto: o time consegue validar configuração do gateway e fluxo de envio sem sair do painel administrativo.
+  - Próximos passos: integrar healthcheck específico do provider escolhido e enriquecer observabilidade de falhas de envio (status/code/trace simplificado).
+  - Tags: `#whatsapp`, `#configuracao`, `#gateway`, `#backend`, `#frontend`
+
+- **2026-08-02** — Micro Sprint 4 concluído: detalhes técnicos opcionais de falha no WhatsApp.
+  - Arquivos tocados: `src/server/whatsappSettingsRoutes.ts`, `src/whatsappGateway.ts`, `src/frontend/SettingsPage.tsx`, `tests/whatsappSettings.test.mjs`, `docs/dev-notes.md`, `PROJECT_MEMORY.md`
+  - Resumo: padronizado retorno de erro com `technicalDetails` (status, endpoint, código e descrição), sem exposição de segredos, e adicionada UI recolhível de “Ver detalhes técnicos” para diagnóstico administrativo.
+  - Impacto: melhora da observabilidade operacional sem degradar segurança de credenciais no painel de configuração.
+  - Próximos passos: padronizar esse mesmo contrato de erro técnico para outros módulos de integração externa.
+  - Tags: `#whatsapp`, `#seguranca`, `#observabilidade`, `#backend`, `#frontend`
+
+- **2026-08-02** — Micro Sprint 4B concluído: sessão WhatsApp com QR Code e status operacional.
+  - Arquivos tocados: `src/frontend/SettingsPage.tsx`, `src/frontend/whatsappConnectionUi.tsx`, `src/server/whatsappSettingsRoutes.ts`, `src/server/whatsappSessionGateway.ts`, `tests/whatsappSettings.test.mjs`, `docs/dev-notes.md`, `PROJECT_MEMORY.md`
+  - Resumo: painel de configuração ganhou fluxo de sessão por instância (`create/connect/status/refresh-qr/disconnect`), badge de estado, renderização de QR Code e polling automático de status. O envio de mensagem de teste passou a depender de sessão conectada na UI, e as rotas receberam fallback seguro para cenários de teste sem model de sessão no Prisma.
+  - Impacto: operacionaliza o pareamento e monitoramento do WhatsApp dentro do sistema sem depender de ações externas, preservando compatibilidade de testes e estabilidade do backend.
+  - Próximos passos: validar o fluxo com gateway real (Evolution/WAHA), adicionar telemetria simples por transição de status e ampliar testes de UI para os estados da sessão.
+  - Tags: `#whatsapp`, `#qrcode`, `#sessao`, `#backend`, `#frontend`
+
+- **2026-08-02** — Micro Sprint 5 concluído: inbound WhatsApp integrado a Conversation/Message com vínculo de cliente e OS.
+  - Arquivos tocados: `src/server.ts`, `src/server/whatsappWebhook.ts`, `src/server/communicationsRouter.ts`, `tests/whatsappWebhook.test.mjs`, `docs/dev-notes.md`, `PROJECT_MEMORY.md`
+  - Resumo: webhook inbound passou a responder `200` rápido e processar de forma resiliente; foi implementado normalizador do payload Evolution e normalização de telefone. O fluxo agora localiza cliente por telefone, cria/reutiliza conversa por `instance:phone`, deduplica mensagens inbound por id externo e faz associação simples com OS quando houver uma única opção aberta/recente.
+  - Impacto: prepara a base para futura inbox operacional sem quebrar o fluxo atual de QR/sessão e sem exigir migração de schema nesta etapa.
+  - Próximos passos: criar tela de atendimento consumindo `GET /communications/conversations/recent`; adicionar campos formais de `externalMessageId/rawPayload/messageTimestamp` no schema para reduzir sobrecarga semântica dos campos reaproveitados; evoluir suporte a mídia.
+  - Tags: `#whatsapp`, `#webhook`, `#conversations`, `#messages`, `#backend`
+
 ## Backlog de próximos passos
 
 ### Alta prioridade

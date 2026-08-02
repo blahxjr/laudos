@@ -109,6 +109,146 @@ npm run frontend:dev
 - A UI da OS continua compatível com o fluxo de laudo em abas e com a navegação atual.
 - A próxima evolução natural é ampliar a atividade para eventos automáticos como criação de orçamento, cobrança gerada e envio por WhatsApp.
 
+## Sprint Passo 2 — Controle de estoque nas ordens de serviço
+
+### O que foi implementado
+
+- O catálogo de peças agora suporta `stockQuantity` e `minimumStock` em `PartCatalog`.
+- O backend ajusta o estoque automaticamente ao criar, editar ou remover itens de OS do tipo `PARTE`.
+- O fluxo valida que o estoque não fique negativo e retorna mensagem amigável em português quando a operação não for permitida.
+- A tela de OS e a página de catálogo passam a mostrar saldo atual, mínimo configurado e alerta visual de baixo estoque.
+- A suíte de testes foi ampliada com cenários de decremento de estoque e proxy do Vite.
+
+### Validação
+
+- `npm test` — 10 testes aprovados, 0 falhas.
+- `npx vite build` — build do frontend concluído com sucesso.
+
+## Sprint Passo 3 — Dashboard operacional simples
+
+### O que foi implementado
+
+- Endpoint `GET /dashboard/overview` com resumo de OS por status, total de laudos, faturamento total e periodização simples para os últimos 30 dias.
+- Nova página `DashboardPage` acessível em `/dashboard` com cards visuais e lista de distribuição por status.
+- Navegação principal atualizada para incluir o item "Dashboard".
+
+### Validação
+
+- `npm test` — 11 testes aprovados, 0 falhas.
+- `npx vite build` — build do frontend concluído com sucesso.
+- `npx tsc --noEmit` — sem erros de TypeScript.
+
+## Sprint Passo 4 — Resumo de OS/laudo pronto para WhatsApp
+
+### O que foi implementado
+
+- Função `buildWhatsAppSummary` em `src/frontend/whatsAppSummary.ts` para montar um texto objetivo com dados do cliente, OS, equipamento, diagnóstico, conclusão, valor total e link do laudo completo.
+- Botão “Copiar resumo para WhatsApp” na tela de laudo, na aba de diagnóstico, com feedback visual ao copiar.
+- Teste de regressão para garantir que a string do resumo mantenha o formato esperado.
+
+### Validação
+
+- `npm test` — 12 testes aprovados, 0 falhas.
+- `npx vite build` — build do frontend concluído com sucesso.
+- `npx tsc --noEmit` — sem erros de TypeScript.
+
+## Sprint Passo 7 — POC WhatsApp via gateway/API externo
+
+### O que foi implementado
+
+- Novo helper `src/whatsappGateway.ts` com função `sendWhatsAppTextMessage` para enviar texto para um gateway externo.
+- Nova rota `POST /communications/whatsapp/send-summary` no backend para montar o resumo do laudo e disparar o envio via gateway.
+- Botão na tela de laudo para disparar o envio pelo gateway com estado de carregamento e feedback visual.
+- Nova rota `POST /webhooks/whatsapp` para receber mensagens inbound e criar/atualizar cliente, conversa, mensagem e OS básica.
+- Logging melhorado para acompanhar cliente encontrado/criado, conversa, OS e falhas de token.
+- Proteção básica contra mensagens duplicadas quando o payload já chega com `messageId`.
+
+### Variáveis de ambiente para desenvolvimento
+
+Crie ou ajuste um arquivo `.env.local` com:
+
+```env
+WHATSAPP_GATEWAY_BASE_URL=http://localhost:8080
+WHATSAPP_GATEWAY_TOKEN=seu-token-aqui
+APP_BASE_URL=http://localhost:5173
+```
+
+### Exemplo de body para depuração
+
+```json
+{
+  "reportId": "<id-do-laudo>",
+  "mode": "short"
+}
+```
+
+### Teste manual do webhook inbound
+
+1. Inicie o backend com `npm run dev`.
+2. Defina `WHATSAPP_GATEWAY_WEBHOOK_TOKEN` no ambiente, se quiser validar o header `x-gateway-token`.
+3. Envie um `POST` para `http://localhost:3000/webhooks/whatsapp` com um payload como:
+
+```json
+{
+  "phone": "+55 11 99999-8888",
+  "text": "Olá, preciso de um atendimento",
+  "messageId": "msg-001",
+  "timestamp": "1750000000000"
+}
+```
+
+4. Verifique no console do backend os logs com prefixo `[whatsapp-webhook]`.
+5. Confirme no banco se foi criado/recuperado:
+   - um `Client` com o telefone normalizado;
+   - uma `Conversation` aberta;
+   - uma `Message` inbound;
+   - uma `ServiceOrder` com status `ABERTA` ou uma atividade anexada a uma OS aberta existente.
+
+### Cenários de validação adicionais
+
+- Payload sem `phone`/`text` deve retornar `400` e log de warning.
+- Token inválido deve retornar `401` quando `WHATSAPP_GATEWAY_WEBHOOK_TOKEN` estiver configurado.
+- Repetir o mesmo `messageId` deve retornar `200` com `duplicated: true` sem duplicar a mensagem no banco.
+
+### Limitações atuais
+
+- Envio de texto apenas.
+- Webhook inbound com fluxo mínimo e sem mídia neste POC.
+
+## Micro Sprint 5 — Inbound WhatsApp para Conversas/Atendimento
+
+### O que foi implementado
+
+- Webhook inbound consolidado com resposta rápida `200` em duas rotas:
+  - `POST /webhooks/whatsapp`
+  - `POST /communications/webhook/inbound`
+- Processamento resiliente assíncrono para evitar timeout no webhook e tolerar eventos irrelevantes/parciais.
+- Novo normalizador de payload Evolution em `src/server/whatsappWebhook.ts`:
+  - extração de `providerMessageId`, `instanceName`, `fromPhone`, `fromName`, `messageType`, `text`, `timestamp` e `rawPayload`.
+- Novo helper `normalizePhoneNumber(phone)` para padronização e comparação de telefones.
+- Fluxo inbound de persistência:
+  - localiza `Channel` WhatsApp (ou cria se ausente),
+  - busca `Client` por telefone normalizado,
+  - cria/reutiliza `Conversation` por chave `instance:phone`,
+  - associa `clientId` quando encontrado,
+  - associa `serviceOrderId` quando houver uma única OS aberta/recente,
+  - salva `Message` inbound e ignora duplicatas por `providerMessageId` (dedupe via `mediaId`).
+- Endpoint para futura UI de atendimento:
+  - `GET /communications/conversations/recent`
+  - suporta filtro opcional por `phone` e retorna resumo com cliente, OS e última mensagem.
+
+### Pontos de atenção
+
+- Nesta sprint, não houve mudança de schema Prisma: foram reaproveitados campos existentes para manter compatibilidade imediata.
+- O dedupe de mensagem usa `message.mediaId` como id externo do provider.
+- O `fromName` e payload bruto ficam preservados em metadados serializados da mensagem inbound para suporte à futura UI.
+
+### Validação
+
+- `npm test` — 39 testes aprovados, 0 falhas.
+- `npx vite build` — build do frontend concluído com sucesso.
+- `npx tsc --noEmit` — sem erros de TypeScript.
+
 ## Arquitetura de agentes e uso de IA no desenvolvimento
 
 O projeto utiliza uma arquitetura colaborativa de agentes para orientar evolução, qualidade e coordenação entre frontend, backend, banco e IA.
@@ -152,6 +292,167 @@ Essa rotina vale para qualquer agente (Frontend, Backend/API, Prisma, Comunicaç
 - **Agente Frontend**: evolui React/Vite e assegura que a rota `/service-orders` e o fluxo de laudo em abas permaneçam intactos.
 - **Agente Backend/API**: mantém as rotas Express, validações e integrações com Prisma e IA.
 - **Agente Banco/Prisma**: cuida do schema e das migrations, atualizando a documentação quando necessário.
+
+## Micro Sprint 4B — Tela WhatsApp com QR Code e status de conexão
+
+### O que foi implementado
+
+- Tela `SettingsPage` expandida com configuração de `provider` e `instanceName` no mesmo formulário de integração WhatsApp.
+- Novo bloco de sessão WhatsApp com resumo de conexão, badge de status, exibição de QR Code e ações operacionais:
+  - `Criar instância`
+  - `Gerar/conectar QR Code`
+  - `Atualizar status`
+  - `Atualizar QR Code`
+  - `Desconectar`
+- Polling automático de status (7s) quando a sessão está em `WAITING_QR` ou `CONNECTING`.
+- Envio de mensagem de teste agora respeita estado da sessão: botão fica desabilitado até status conectado.
+- Rotas backend de sessão foram ajustadas para fallback seguro quando o model Prisma `whatsAppConnection` não está disponível (ambiente de teste/mocks).
+
+### Testes adicionados/ajustados
+
+- Atualização dos asserts de `GET/PUT /settings/whatsapp` para considerar os novos campos `provider` e `instanceName`.
+- Novos testes para ciclo de sessão:
+  - `GET /settings/whatsapp/instance` padrão desconectado;
+  - fluxo de lifecycle (`create`, `connect`, `status`, `disconnect`) em memória.
+
+### Validação
+
+- `npm test -- --runInBand` — 23 testes aprovados, 0 falhas.
+- `npx vite build` — build do frontend concluído com sucesso.
+- `npx tsc --noEmit` — sem erros reportados.
+
+## Micro Sprint 1 — Configurações WhatsApp (backend)
+
+### O que foi implementado
+
+- Novo modelo Prisma `AppSetting` (tabela `app_settings`) com índice único por `(category, key)`.
+- Nova migration `prisma/migrations/20260802190000_add_app_settings/migration.sql` para persistência de configurações globais.
+- Novo serviço `src/server/settingsService.ts` com:
+  - `getWhatsAppSettings()`
+  - `updateWhatsAppSettings(payload)`
+  - normalização de payload (`camelCase` e nomes de variáveis em caixa alta), validação básica de URL/telefone e resposta sem expor tokens.
+- Novas rotas backend registradas em `src/server.ts` via `registerWhatsAppSettingsRoutes`:
+  - `GET /settings/whatsapp`
+  - `PUT /settings/whatsapp`
+- Novo teste `tests/whatsappSettings.test.mjs` cobrindo leitura inicial e persistência via PUT+GET.
+
+### Decisão de segurança
+
+- O endpoint de leitura não retorna os valores brutos de token.
+- O contrato expõe apenas flags:
+  - `hasGatewayToken`
+  - `hasGatewayWebhookToken`
+
+### Validação
+
+- `npx prisma generate` — concluído com sucesso.
+- `npm test` — 17 testes aprovados, 0 falhas.
+- `npx tsc --noEmit` — sem erros de TypeScript.
+
+## Micro Sprint 2 — Tela Configurações > WhatsApp (frontend)
+
+### O que foi implementado
+
+- Nova página de configurações em `src/frontend/SettingsPage.tsx` com seção dedicada ao WhatsApp.
+- Rota `/settings` passou a renderizar a página real de configurações (substituindo o placeholder) em `src/frontend/main.tsx`.
+- Formulário com campos:
+  - URL do gateway
+  - Token da API (password)
+  - Token do webhook (password)
+  - URL pública do app
+  - Número padrão para teste
+- Integração com backend:
+  - `GET /settings/whatsapp` ao montar a seção
+  - `PUT /settings/whatsapp` ao salvar
+- Feedback de UX:
+  - loading de carregamento e salvamento
+  - mensagem de sucesso
+  - mensagem de erro simples
+- Proxy do Vite ajustado para API de settings sem quebrar a rota SPA:
+  - incluído `/settings/whatsapp` em `vite.config.ts`
+  - mantida a navegação de frontend em `/settings`
+
+### Observação técnica importante
+
+- Evitado proxy em `/settings` (raiz), pois isso interceptava a rota SPA e retornava `Cannot GET /settings`.
+
+### Validação
+
+- `npm test` — 17 testes aprovados, 0 falhas.
+- `npx vite build` — build concluído com sucesso.
+- `npx tsc --noEmit` — sem erros (`TS_OK`).
+- Verificação manual no navegador:
+  - abertura de `/settings`;
+  - edição e salvamento de configurações;
+  - reload da página com persistência dos valores não sensíveis.
+
+## Micro Sprint 3 — Testar conexão e enviar mensagem de teste (WhatsApp)
+
+### O que foi implementado
+
+- Backend:
+  - Novo endpoint `POST /settings/whatsapp/test-connection`.
+  - Novo endpoint `POST /settings/whatsapp/send-test-message`.
+  - Ambos leem as configurações persistidas em `AppSetting` e retornam mensagens amigáveis de sucesso/erro.
+- Gateway:
+  - `src/whatsappGateway.ts` ganhou `testWhatsAppGatewayConnection` para healthcheck leve no gateway.
+  - `sendWhatsAppTextMessage` passou a aceitar override de `gatewayBaseUrl` e `gatewayToken`, permitindo uso direto das configurações salvas no banco.
+- Frontend (`SettingsPage`):
+  - Bloco “Status da conexão” com botão **Testar conexão** e feedback visual.
+  - Bloco “Envio de mensagem de teste” com campo de número, campo opcional de mensagem e botão **Enviar mensagem de teste**.
+  - Estados de loading e mensagens de retorno para ambos os fluxos.
+- Testes:
+  - `tests/whatsappSettings.test.mjs` ampliado para cobrir os endpoints:
+    - `POST /settings/whatsapp/test-connection`
+    - `POST /settings/whatsapp/send-test-message`
+
+### Validação
+
+- `npm test` — 19 testes aprovados, 0 falhas.
+- `npx vite build` — build concluído com sucesso.
+- `npx tsc --noEmit` — sem erros (`TS_OK`).
+- Validação manual da tela:
+  - `Testar conexão` exibiu retorno de erro amigável quando gateway está indisponível.
+  - `Enviar mensagem de teste` exibiu retorno de erro amigável quando envio falha.
+
+### Limite respeitado
+
+- Nenhuma alteração no webhook inbound nesta sprint.
+- Escopo mantido apenas para teste de conexão e envio de texto de teste.
+
+## Micro Sprint 4 — Detalhes técnicos opcionais de falha
+
+### O que foi implementado
+
+- Backend:
+  - Padronização das respostas de erro nos endpoints:
+    - `POST /settings/whatsapp/test-connection`
+    - `POST /settings/whatsapp/send-test-message`
+  - Novo formato de erro:
+    - `ok: false`
+    - `message` amigável
+    - `technicalDetails` opcional com `statusCode`, `endpoint`, `errorCode`, `errorMessage`
+  - Sanitização de endpoint para não expor credenciais embutidas em URL.
+  - Nenhum token/authorization header/segredo é retornado no payload.
+
+- Frontend:
+  - Em `SettingsPage`, as mensagens amigáveis foram mantidas.
+  - Em caso de erro, foi adicionado controle discreto “Ver detalhes técnicos” para:
+    - status HTTP
+    - endpoint
+    - código de erro
+    - descrição resumida
+  - O bloco inicia recolhido por padrão e não exibe stack trace completa.
+
+- Testes:
+  - Novos cenários cobrindo `technicalDetails` nas respostas de erro.
+  - Asserções de segurança garantindo ausência de token e credenciais nas respostas.
+
+### Validação
+
+- `npm test` — 21 testes aprovados, 0 falhas.
+- `npx vite build` — build concluído com sucesso.
+- `npx tsc --noEmit` — sem erros (`TS_OK`).
 - **Agente IA/Diagnóstico**: evolui a sugestão de diagnóstico assistido e mantém o `DiagnosticContext` alinhado com os campos do laudo.
 - **Agente UX/Documentação**: documenta decisões e mantém a interface e os templates visuais consistentes.
 

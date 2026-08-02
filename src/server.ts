@@ -7,6 +7,12 @@ import { PrismaClient } from '../generated/prisma/client.js'
 import { createClientApiErrorPayload, createClientValidationErrors, normalizeClientPayload } from './server/clientValidation.js'
 import { createCommunicationsRouter } from './server/communicationsRouter.js'
 import { SERVICE_ORDER_STATUS_OPTIONS, validateServiceOrderStatus } from './server/serviceOrderStatus.js'
+import { applyStockDelta, isLowStock } from './server/stockFlow.js'
+import { buildDashboardOverview } from './server/dashboard.js'
+import { sendWhatsAppTextMessage } from './whatsappGateway.js'
+import { buildWhatsAppFullSummary, buildWhatsAppShortSummary } from './frontend/whatsAppSummary.js'
+import { handleWhatsAppWebhook } from './server/whatsappWebhook.js'
+import { registerWhatsAppSettingsRoutes } from './server/whatsappSettingsRoutes.js'
 
 // PrismaClient configurado para ESM (NodeNext).
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000
@@ -28,6 +34,141 @@ async function createServer() {
   app.use(express.json())
   app.use(cors())
   app.use('/communications', createCommunicationsRouter(prisma))
+  registerWhatsAppSettingsRoutes(app, prisma as any)
+
+  const processInboundWebhook = (body: unknown) => {
+    queueMicrotask(async () => {
+      try {
+        await handleWhatsAppWebhook(prisma, (body || {}) as any)
+      } catch (error) {
+        console.error('[whatsapp-webhook] async processing error:', error)
+      }
+    })
+  }
+
+  const handleInboundWebhookRequest = async (req: Request, res: Response) => {
+    const gatewayToken = process.env.WHATSAPP_GATEWAY_WEBHOOK_TOKEN?.trim()
+    const incomingToken = typeof req.headers['x-gateway-token'] === 'string'
+      ? req.headers['x-gateway-token']
+      : typeof req.query.token === 'string'
+        ? req.query.token
+        : undefined
+
+    if (gatewayToken && incomingToken !== gatewayToken) {
+      console.warn('[whatsapp-webhook] token inválido', { received: incomingToken ? 'present' : 'missing' })
+      return res.status(401).json({ ok: false, error: 'Unauthorized' })
+    }
+
+    if (!gatewayToken && incomingToken) {
+      console.warn('[whatsapp-webhook] token não configurado, mas foi recebido', { received: incomingToken })
+    }
+
+    try {
+      const body = (req.body || {}) as any
+      console.info('[whatsapp-webhook] request received', {
+        event: body?.event,
+        instanceName: body?.instance ?? body?.instanceName,
+        messageId: body?.messageId ?? body?.data?.key?.id,
+      })
+
+      processInboundWebhook(body)
+      return res.status(200).json({ ok: true, accepted: true })
+    } catch (error) {
+      console.error('POST /webhooks/whatsapp error:', error)
+      return res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  app.post('/webhooks/whatsapp', handleInboundWebhookRequest)
+  app.post('/communications/webhook/inbound', handleInboundWebhookRequest)
+
+  app.post('/communications/whatsapp/send-summary', async (req: Request, res: Response) => {
+    try {
+      const { reportId, clientId, phone, mode = 'short' } = req.body as {
+        reportId?: string
+        clientId?: string
+        phone?: string
+        mode?: 'short' | 'full'
+      }
+
+      const report = reportId
+        ? await prisma.technicalReport.findUnique({
+            where: { id: reportId },
+            include: {
+              serviceOrder: {
+                include: {
+                  client: true,
+                  equipment: true,
+                  invoices: true,
+                },
+              },
+            },
+          })
+        : null
+
+      const client = clientId
+        ? await prisma.client.findUnique({ where: { id: clientId } })
+        : report?.serviceOrder?.client ?? null
+
+      const serviceOrder = report?.serviceOrder ?? null
+      const invoice = serviceOrder?.invoices?.[0] ?? null
+      const resolvedPhone = typeof phone === 'string' && phone.trim()
+        ? phone.trim()
+        : (client?.whatsappNumber || client?.primaryPhone || '').trim()
+
+      if (!resolvedPhone) {
+        return res.status(400).json({ ok: false, error: 'Número de WhatsApp não encontrado para o cliente.' })
+      }
+
+      if (!report) {
+        return res.status(404).json({ ok: false, error: 'Laudo não encontrado.' })
+      }
+
+      const summaryText = mode === 'full'
+        ? buildWhatsAppFullSummary(
+            {
+              assistencia: { companyName: report.companyName },
+              cliente: client,
+              equipamento: serviceOrder?.equipment,
+              diagnostico: {
+                probableCause: report.probableCause,
+                technicalConclusion: report.technicalConclusion,
+              },
+              financeiro: { totalValue: Number(report.totalValue ?? 0) },
+              meta: { id: report.id, protocol: serviceOrder?.protocol },
+            },
+            { protocol: serviceOrder?.protocol },
+            { total: Number(invoice?.total ?? report.totalValue ?? 0) },
+            process.env.APP_BASE_URL || 'http://localhost:5173'
+          )
+        : buildWhatsAppShortSummary(
+            {
+              assistencia: { companyName: report.companyName },
+              cliente: client,
+              equipamento: serviceOrder?.equipment,
+              diagnostico: {
+                probableCause: report.probableCause,
+                technicalConclusion: report.technicalConclusion,
+              },
+              financeiro: { totalValue: Number(report.totalValue ?? 0) },
+              meta: { id: report.id, protocol: serviceOrder?.protocol },
+            },
+            { protocol: serviceOrder?.protocol },
+            { total: Number(invoice?.total ?? report.totalValue ?? 0) },
+            process.env.APP_BASE_URL || 'http://localhost:5173'
+          )
+
+      const gatewayResult = await sendWhatsAppTextMessage({ phone: resolvedPhone, text: summaryText })
+      if (!gatewayResult.ok) {
+        return res.status(502).json({ ok: false, error: gatewayResult.error || 'Falha ao enviar mensagem via gateway.' })
+      }
+
+      return res.json({ ok: true, phone: resolvedPhone, mode, reportId: report.id })
+    } catch (error) {
+      console.error('POST /communications/whatsapp/send-summary error:', error)
+      return res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
+    }
+  })
 
   app.get('/health', async (_req: Request, res: Response) => {
     try {
@@ -36,6 +177,49 @@ async function createServer() {
     } catch (error) {
       console.error('Health check error:', error)
       res.status(500).json({ status: 'error', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.get('/dashboard/overview', async (_req: Request, res: Response) => {
+    try {
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+
+      const [osByStatus, totalLaudos, totalFaturamento, last30DaysLaudos, last30DaysFaturamento] = await Promise.all([
+        Promise.all([
+          prisma.serviceOrder.count({ where: { status: 'ABERTA' } }),
+          prisma.serviceOrder.count({ where: { status: 'EM_DIAGNOSTICO' } }),
+          prisma.serviceOrder.count({ where: { status: 'AGUARDANDO_CLIENTE' } }),
+          prisma.serviceOrder.count({ where: { status: 'CONCLUIDA' } }),
+          prisma.serviceOrder.count({ where: { status: 'SEM_CONSERTO' } }),
+        ]),
+        prisma.technicalReport.count(),
+        prisma.invoice.aggregate({ _sum: { total: true } }),
+        prisma.technicalReport.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+        prisma.invoice.aggregate({
+          _sum: { total: true },
+          where: { issuedAt: { gte: thirtyDaysAgo } },
+        }),
+      ])
+
+      const overview = buildDashboardOverview({
+        osByStatus: {
+          ABERTA: osByStatus[0],
+          EM_DIAGNOSTICO: osByStatus[1],
+          AGUARDANDO_CLIENTE: osByStatus[2],
+          CONCLUIDA: osByStatus[3],
+          SEM_CONSERTO: osByStatus[4],
+        },
+        totalLaudos,
+        totalFaturamento: Number(totalFaturamento._sum.total ?? 0),
+        last30DaysLaudos,
+        last30DaysFaturamento: Number(last30DaysFaturamento._sum.total ?? 0),
+      })
+
+      res.json(overview)
+    } catch (error) {
+      console.error('GET /dashboard/overview error:', error)
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
     }
   })
 
@@ -576,6 +760,20 @@ async function createServer() {
     }
   })
 
+  app.get('/parts/low-stock', async (_req: Request, res: Response) => {
+    try {
+      const parts = await prisma.partCatalog.findMany({
+        where: { isActive: true },
+        orderBy: { createdAt: 'desc' },
+      })
+      const lowStockParts = parts.filter((part: any) => isLowStock(Number(part.stockQuantity ?? 0), Number(part.minimumStock ?? 0)))
+      res.json({ data: lowStockParts })
+    } catch (err) {
+      console.error('GET /parts/low-stock error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
   app.post('/services/catalog', async (req: Request, res: Response) => {
     try {
       const { name, description, price } = req.body
@@ -644,12 +842,24 @@ async function createServer() {
 
   app.post('/parts/catalog', async (req: Request, res: Response) => {
     try {
-      const { name, description, price } = req.body
+      const { name, description, price, stockQuantity, minimumStock } = req.body
       const normalizedPrice = parseDecimal(price)
+      const normalizedStockQuantity = Number(stockQuantity)
+      const normalizedMinimumStock = Number(minimumStock)
       if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Field "name" is required' })
       if (normalizedPrice === null || normalizedPrice < 0) return res.status(400).json({ error: 'Field "price" must be a valid non-negative number' })
+      if (!Number.isFinite(normalizedStockQuantity) || normalizedStockQuantity < 0) return res.status(400).json({ error: 'Field "stockQuantity" must be a non-negative number' })
+      if (!Number.isFinite(normalizedMinimumStock) || normalizedMinimumStock < 0) return res.status(400).json({ error: 'Field "minimumStock" must be a non-negative number' })
 
-      const created = await prisma.partCatalog.create({ data: { name, description, price: normalizedPrice } })
+      const created = await prisma.partCatalog.create({
+        data: {
+          name,
+          description,
+          price: normalizedPrice,
+          stockQuantity: normalizedStockQuantity,
+          minimumStock: normalizedMinimumStock,
+        },
+      })
       res.status(201).json(created)
     } catch (err) {
       console.error('POST /parts/catalog error:', err)
@@ -661,10 +871,14 @@ async function createServer() {
     const id = req.params.id
     if (!id) return res.status(400).json({ error: 'Missing id' })
     try {
-      const { name, description, price, isActive } = req.body
+      const { name, description, price, stockQuantity, minimumStock, isActive } = req.body
       const normalizedPrice = price !== undefined ? parseDecimal(price) : undefined
+      const normalizedStockQuantity = stockQuantity !== undefined ? Number(stockQuantity) : undefined
+      const normalizedMinimumStock = minimumStock !== undefined ? Number(minimumStock) : undefined
       if (name !== undefined && typeof name !== 'string') return res.status(400).json({ error: 'Field "name" must be a string' })
       if (normalizedPrice !== undefined && (normalizedPrice === null || normalizedPrice < 0)) return res.status(400).json({ error: 'Field "price" must be a valid non-negative number' })
+      if (normalizedStockQuantity !== undefined && (!Number.isFinite(normalizedStockQuantity) || normalizedStockQuantity < 0)) return res.status(400).json({ error: 'Field "stockQuantity" must be a non-negative number' })
+      if (normalizedMinimumStock !== undefined && (!Number.isFinite(normalizedMinimumStock) || normalizedMinimumStock < 0)) return res.status(400).json({ error: 'Field "minimumStock" must be a non-negative number' })
 
       const existing = await prisma.partCatalog.findUnique({ where: { id } })
       if (!existing) return res.status(404).json({ error: 'PartCatalog item not found' })
@@ -673,6 +887,8 @@ async function createServer() {
       if (name !== undefined) data.name = name
       if (description !== undefined) data.description = description
       if (normalizedPrice !== undefined) data.price = normalizedPrice
+      if (normalizedStockQuantity !== undefined) data.stockQuantity = normalizedStockQuantity
+      if (normalizedMinimumStock !== undefined) data.minimumStock = normalizedMinimumStock
       if (isActive !== undefined) data.isActive = isActive
 
       const updated = await prisma.partCatalog.update({ where: { id }, data })
@@ -720,11 +936,33 @@ async function createServer() {
       const { type, serviceCatalogId, partCatalogId, description, quantity, unitPrice } = req.body
       if (!type || (type !== 'SERVICO' && type !== 'PARTE')) return res.status(400).json({ error: 'Field "type" must be SERVICO or PARTE' })
       if (!description || typeof description !== 'string') return res.status(400).json({ error: 'Field "description" is required' })
+      if (type === 'PARTE' && (!partCatalogId || typeof partCatalogId !== 'string' || !partCatalogId.trim())) return res.status(400).json({ error: 'Field "partCatalogId" is required for PARTE items' })
 
       const quantityNumber = Number(quantity)
       const priceNumber = parseDecimal(unitPrice)
       if (!Number.isFinite(quantityNumber) || quantityNumber <= 0) return res.status(400).json({ error: 'Field "quantity" must be a positive number' })
       if (priceNumber === null || priceNumber < 0) return res.status(400).json({ error: 'Field "unitPrice" must be a valid non-negative number' })
+
+      let stockUpdateResult: { valid: boolean; stockQuantity: number; error?: string } | null = null
+      if (type === 'PARTE' && partCatalogId) {
+        const partCatalog = await prisma.partCatalog.findUnique({ where: { id: String(partCatalogId) } })
+        if (!partCatalog) return res.status(404).json({ error: 'PartCatalog item not found' })
+        stockUpdateResult = applyStockDelta({
+          currentStock: Number(partCatalog.stockQuantity ?? 0),
+          minimumStock: Number(partCatalog.minimumStock ?? 0),
+          quantity: quantityNumber,
+          direction: 'decrement',
+        })
+        if (!stockUpdateResult.valid) return res.status(400).json({ error: stockUpdateResult.error })
+        const lowStock = isLowStock(stockUpdateResult.stockQuantity, Number(partCatalog.minimumStock ?? 0))
+        await prisma.partCatalog.update({
+          where: { id: partCatalog.id },
+          data: { stockQuantity: stockUpdateResult.stockQuantity },
+        })
+        if (lowStock) {
+          console.warn(`[stock] Part ${partCatalog.name} is below minimum stock after OS consumption`) 
+        }
+      }
 
       const totalPrice = calculateTotalPrice(quantityNumber, priceNumber)
       const created = await prisma.serviceOrderItem.create({
@@ -783,6 +1021,28 @@ async function createServer() {
         updates.totalPrice = updatedValues.totalPrice
       }
 
+      if (existingItem.type === 'PARTE' && existingItem.partCatalogId && updates.quantity !== undefined) {
+        const partCatalog = await prisma.partCatalog.findUnique({ where: { id: existingItem.partCatalogId } })
+        if (!partCatalog) return res.status(404).json({ error: 'PartCatalog item not found' })
+        const delta = Number(updates.quantity) - Number(existingItem.quantity)
+        const direction = delta > 0 ? 'decrement' : 'increment'
+        const stockResult = applyStockDelta({
+          currentStock: Number(partCatalog.stockQuantity ?? 0),
+          minimumStock: Number(partCatalog.minimumStock ?? 0),
+          quantity: Math.abs(delta),
+          direction,
+        })
+        if (!stockResult.valid) return res.status(400).json({ error: stockResult.error })
+        const lowStock = isLowStock(stockResult.stockQuantity, Number(partCatalog.minimumStock ?? 0))
+        await prisma.partCatalog.update({
+          where: { id: partCatalog.id },
+          data: { stockQuantity: stockResult.stockQuantity },
+        })
+        if (lowStock) {
+          console.warn(`[stock] Part ${partCatalog.name} is below minimum stock after OS item update`) 
+        }
+      }
+
       const updated = await prisma.serviceOrderItem.update({ where: { id: itemId }, data: updates })
       res.json(updated)
     } catch (err) {
@@ -797,6 +1057,21 @@ async function createServer() {
     try {
       const existingItem = await prisma.serviceOrderItem.findUnique({ where: { id: itemId } })
       if (!existingItem || existingItem.serviceOrderId !== id) return res.status(404).json({ error: 'ServiceOrderItem not found' })
+      if (existingItem.type === 'PARTE' && existingItem.partCatalogId) {
+        const partCatalog = await prisma.partCatalog.findUnique({ where: { id: existingItem.partCatalogId } })
+        if (!partCatalog) return res.status(404).json({ error: 'PartCatalog item not found' })
+        const stockResult = applyStockDelta({
+          currentStock: Number(partCatalog.stockQuantity ?? 0),
+          minimumStock: Number(partCatalog.minimumStock ?? 0),
+          quantity: Number(existingItem.quantity ?? 0),
+          direction: 'increment',
+        })
+        if (!stockResult.valid) return res.status(400).json({ error: stockResult.error })
+        await prisma.partCatalog.update({
+          where: { id: partCatalog.id },
+          data: { stockQuantity: stockResult.stockQuantity },
+        })
+      }
       await prisma.serviceOrderItem.delete({ where: { id: itemId } })
       res.json({ message: 'ServiceOrderItem deleted' })
     } catch (err) {
