@@ -273,6 +273,36 @@ textarea:focus {
   border-color: #f5cdb2;
 }
 
+.status-pill.status-disconnected {
+  color: #64748b;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.status-pill.status-waiting-qr {
+  color: #9a6700;
+  background: #fff8dc;
+  border-color: #f2d38b;
+}
+
+.status-pill.status-connecting {
+  color: #1d4ed8;
+  background: #e8f1ff;
+  border-color: #9ec5ff;
+}
+
+.status-pill.status-connected {
+  color: var(--success);
+  background: #ecfdf3;
+  border-color: #b7ebc2;
+}
+
+.status-pill.status-failed {
+  color: #b42318;
+  background: #fff1f3;
+  border-color: #f9b4bb;
+}
+
 .app-shell {
   display: flex;
   min-height: 100vh;

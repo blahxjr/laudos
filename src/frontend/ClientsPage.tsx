@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { formatCep, formatDocument, getDocumentValidationError, getZipCodeValidationError, onlyDigits, parseClientApiErrors } from './clientFormatting'
+import ConversationChat from './ConversationChat.js'
+import { formatCep, formatDocument, getDocumentValidationError, getZipCodeValidationError, onlyDigits, parseClientApiErrors } from './clientFormatting.js'
 
 type Client = {
   id: string
@@ -13,6 +14,9 @@ type Client = {
   city?: string | null
   state?: string | null
   zipCode?: string | null
+  primaryPhone?: string | null
+  whatsappNumber?: string | null
+  telegramHandle?: string | null
   accountStatus?: string | null
   createdAt?: string
   updatedAt?: string
@@ -29,10 +33,41 @@ type ClientFormState = {
   city: string
   state: string
   zipCode: string
+  primaryPhone: string
+  whatsappNumber: string
+  telegramHandle: string
   accountStatus: string
 }
 
-const emptyForm = (): ClientFormState => ({ name: '', type: 'PF', document: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '', zipCode: '', accountStatus: 'ATIVO' })
+type ConversationSummary = {
+  id: string
+  channel?: { name?: string }
+  externalId?: string | null
+  status?: string
+  updatedAt?: string
+}
+
+type Conversation = ConversationSummary & {
+  client?: { name?: string }
+  serviceOrder?: { protocol?: string }
+}
+
+const emptyForm = (): ClientFormState => ({
+  name: '',
+  type: 'PF',
+  document: '',
+  street: '',
+  number: '',
+  complement: '',
+  neighborhood: '',
+  city: '',
+  state: '',
+  zipCode: '',
+  primaryPhone: '',
+  whatsappNumber: '',
+  telegramHandle: '',
+  accountStatus: 'ATIVO',
+})
 
 const buildClientFormState = (client: Partial<Client> | null | undefined): ClientFormState => ({
   name: client?.name || '',
@@ -45,6 +80,9 @@ const buildClientFormState = (client: Partial<Client> | null | undefined): Clien
   city: client?.city || '',
   state: client?.state || '',
   zipCode: client?.zipCode || '',
+  primaryPhone: client?.primaryPhone || '',
+  whatsappNumber: client?.whatsappNumber || '',
+  telegramHandle: client?.telegramHandle || '',
   accountStatus: client?.accountStatus || 'ATIVO',
 })
 
@@ -63,6 +101,9 @@ export default function ClientsPage() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [formGeneralError, setFormGeneralError] = useState<string | null>(null)
   const [duplicateClient, setDuplicateClient] = useState<Client | null>(null)
+  const [clientConversations, setClientConversations] = useState<ConversationSummary[]>([])
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
 
   const isEditingClient = Boolean(selectedClient)
 
@@ -85,6 +126,23 @@ export default function ClientsPage() {
   useEffect(() => {
     loadClients()
   }, [])
+
+  useEffect(() => {
+    if (!selectedClient) {
+      setClientConversations([])
+      setActiveConversationId(null)
+      setActiveConversation(null)
+      return
+    }
+
+    fetch(`/communications/clients/${encodeURIComponent(selectedClient.id)}/conversations`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(await res.text())
+        return res.json()
+      })
+      .then((data) => setClientConversations(data.data || []))
+      .catch(() => setClientConversations([]))
+  }, [selectedClient])
 
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -112,6 +170,11 @@ export default function ClientsPage() {
     setFeedback(null)
     setDuplicateClient(null)
     setIsModalOpen(true)
+  }
+
+  const openConversation = async (conversation: ConversationSummary) => {
+    setActiveConversationId(conversation.id)
+    setActiveConversation(conversation)
   }
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -145,6 +208,9 @@ export default function ClientsPage() {
         city: form.city.trim() || undefined,
         state: form.state.trim().toUpperCase() || undefined,
         zipCode: normalizedZipCode || undefined,
+        primaryPhone: form.primaryPhone.trim() || undefined,
+        whatsappNumber: form.whatsappNumber.trim() || undefined,
+        telegramHandle: form.telegramHandle.trim() || undefined,
         accountStatus: form.accountStatus || 'ATIVO',
       }
 
@@ -232,6 +298,7 @@ export default function ClientsPage() {
                   <tr>
                     <th>Nome</th>
                     <th>Documento</th>
+                    <th>Contato</th>
                     <th>Cidade/UF</th>
                     <th>Status</th>
                     <th>Ações</th>
@@ -239,21 +306,83 @@ export default function ClientsPage() {
                 </thead>
                 <tbody>
                   {filteredClients.map((client) => (
-                    <tr key={client.id}>
+                    <tr key={client.id} className={selectedClient?.id === client.id ? 'selected' : ''}>
                       <td>
                         <strong>{client.name}</strong>
                         <div className="table-subtle">{client.type}</div>
                       </td>
                       <td>{client.document || '-'}</td>
+                      <td>{client.primaryPhone || client.whatsappNumber || client.telegramHandle || '-'}</td>
                       <td>{[client.city, client.state].filter(Boolean).join('/') || '-'}</td>
                       <td>{client.accountStatus || 'ATIVO'}</td>
                       <td>
                         <button type="button" className="table-action" onClick={() => openEdit(client)}>Editar</button>
+                        <button
+                          type="button"
+                          className="table-action"
+                          onClick={() => setSelectedClient(client)}
+                          style={{ marginLeft: 8 }}
+                        >
+                          Ver conversas
+                        </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {selectedClient && (
+            <div className="section-block" style={{ marginTop: 24 }}>
+              <div className="section-heading">
+                <h3>Conversas de {selectedClient.name}</h3>
+                <p style={{ margin: 0, color: '#555' }}>
+                  Conversas atreladas ao cliente selecionado. A seção é atualizada sempre que você escolhe um cliente.
+                </p>
+              </div>
+              {clientConversations.length === 0 ? (
+                <p>Sem conversas encontradas para este cliente.</p>
+              ) : (
+                <div className="table-scroll">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Canal</th>
+                        <th>ID Externo</th>
+                        <th>Status</th>
+                        <th>Última atualização</th>
+                        <th>Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientConversations.map((conversation) => (
+                        <tr key={conversation.id}>
+                          <td>{conversation.channel?.name || '—'}</td>
+                          <td>{conversation.externalId || '—'}</td>
+                          <td>{conversation.status || '—'}</td>
+                          <td>{conversation.updatedAt ? new Date(conversation.updatedAt).toLocaleString() : '—'}</td>
+                          <td>
+                            <button type="button" className="table-action" onClick={() => openConversation(conversation)}>
+                              Abrir chat
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeConversationId && activeConversation && (
+            <div className="section-block" style={{ marginTop: 24 }}>
+              <ConversationChat
+                conversationId={activeConversationId}
+                conversation={activeConversation}
+                onClose={() => setActiveConversationId(null)}
+              />
             </div>
           )}
         </div>
@@ -426,6 +555,33 @@ export default function ClientsPage() {
                       className={formErrors.zipCode || zipCodeError ? 'input-error' : ''}
                     />
                     {(formErrors.zipCode || zipCodeError) && <small className="field-error-message">{formErrors.zipCode || zipCodeError}</small>}
+                  </label>
+                </div>
+              </div>
+              <div className="form-section">
+                <div className="form-section-title">Comunicação</div>
+                <div className="form-section-subtitle">Dados de contato e canais do cliente.</div>
+                <div className="form-grid">
+                  <label className="field">
+                    <span className="field-label">Telefone principal</span>
+                    <input
+                      value={form.primaryPhone}
+                      onChange={(event) => setForm({ ...form, primaryPhone: event.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">WhatsApp</span>
+                    <input
+                      value={form.whatsappNumber}
+                      onChange={(event) => setForm({ ...form, whatsappNumber: event.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Telegram</span>
+                    <input
+                      value={form.telegramHandle}
+                      onChange={(event) => setForm({ ...form, telegramHandle: event.target.value })}
+                    />
                   </label>
                 </div>
               </div>

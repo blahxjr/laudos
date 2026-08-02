@@ -38,6 +38,8 @@ type CatalogItem = {
   name: string
   description?: string | null
   price: number
+  stockQuantity?: number
+  minimumStock?: number
   isActive: boolean
 }
 
@@ -167,10 +169,14 @@ export default function ServiceOrdersPage() {
         setServices(rawServices.map((item) => ({
           ...item,
           price: parseDecimalValue(item.price),
+          stockQuantity: Number(item.stockQuantity ?? 0),
+          minimumStock: Number(item.minimumStock ?? 0),
         })))
         setParts(rawParts.map((item) => ({
           ...item,
           price: parseDecimalValue(item.price),
+          stockQuantity: Number(item.stockQuantity ?? 0),
+          minimumStock: Number(item.minimumStock ?? 0),
         })))
       } catch (err) {
         console.error('Catalog load error:', err)
@@ -576,6 +582,17 @@ export default function ServiceOrdersPage() {
                           <option key={part.id} value={part.id}>{part.name} – R$ {parseDecimalValue(part.price).toFixed(2)}</option>
                         ))}
                       </select>
+                      {itemForm.partCatalogId && (() => {
+                        const selectedPart = parts.find((part) => part.id === itemForm.partCatalogId)
+                        if (!selectedPart) return null
+                        const lowStock = Number(selectedPart.stockQuantity ?? 0) < Number(selectedPart.minimumStock ?? 0)
+                        return (
+                          <div style={{ marginTop: 8, fontSize: 13, color: lowStock ? '#b45309' : '#2563eb' }}>
+                            <strong>Estoque:</strong> {selectedPart.stockQuantity ?? 0} {lowStock ? '⚠️' : '✓'}
+                            {' '}<span>(mínimo {selectedPart.minimumStock ?? 0})</span>
+                          </div>
+                        )
+                      })()}
                     </div>
                   )}
 

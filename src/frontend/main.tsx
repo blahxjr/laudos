@@ -1,28 +1,72 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import AppShell from './AppShell'
-import ClientsPage from './ClientsPage'
-import ServiceOrdersPage from './ServiceOrdersPage'
+import AppShell from './AppShell.js'
+import ClientsPage from './ClientsPage.js'
+import ServiceOrdersPage from './ServiceOrdersPage.js'
+import CatalogPage from './CatalogPage.js'
+import InvoicesPage from './InvoicesPage.js'
+import TechnicalReportDocument from './TechnicalReportDocument.js'
+import DashboardPage from './DashboardPage.js'
+import SettingsPage from './SettingsPage.js'
 import './designSystem.css'
 
 function AppRouter() {
   const [path, setPath] = useState(window.location.pathname)
 
+  useEffect(() => {
+    const handlePopState = () => setPath(window.location.pathname)
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  const reportDocumentId = path.startsWith('/reports/') && path.endsWith('/document')
+    ? path.split('/')[2]
+    : null
+
   const pageContent = useMemo(() => {
+    if (reportDocumentId) {
+      return <TechnicalReportDocument reportId={reportDocumentId} />
+    }
+
     switch (path) {
       case '/clients':
         return <ClientsPage />
       case '/equipment':
         return <div className="sheet" style={{ padding: 24 }}><h3>Equipamentos</h3><p>Gerenciamento de equipamentos em fase de estruturação.</p></div>
+      case '/service-orders':
+        return <ServiceOrdersPage />
+      case '/services':
+        return <CatalogPage
+          title="Serviços"
+          subtitle="Catálogo de serviços"
+          apiList="/services/catalog"
+          apiCreate="/services/catalog"
+          apiUpdate="/services/catalog/:id"
+          apiDelete="/services/catalog/:id"
+          typeLabel="Serviço"
+        />
+      case '/parts':
+        return <CatalogPage
+          title="Peças / Materiais"
+          subtitle="Catálogo de peças e materiais"
+          apiList="/parts/catalog"
+          apiCreate="/parts/catalog"
+          apiUpdate="/parts/catalog/:id"
+          apiDelete="/parts/catalog/:id"
+          typeLabel="Peça"
+        />
+      case '/invoices':
+        return <InvoicesPage />
       case '/reports':
         return <div className="sheet" style={{ padding: 24 }}><h3>Laudos Técnicos</h3><p>Painel de laudos técnicos em fase de estruturação.</p></div>
       case '/components-photos':
         return <div className="sheet" style={{ padding: 24 }}><h3>Componentes e Fotos</h3><p>Gestão de componentes e fotos dos laudos em fase de estruturação.</p></div>
       case '/settings':
-        return <div className="sheet" style={{ padding: 24 }}><h3>Configurações da Assistência</h3><p>Configurações da operação em fase de estruturação.</p></div>
+        return <SettingsPage />
       case '/dashboard':
+        return <DashboardPage />
       default:
-        return <ServiceOrdersPage />
+        return <DashboardPage />
     }
   }, [path])
 
@@ -32,6 +76,14 @@ function AppRouter() {
         return 'Clientes'
       case '/equipment':
         return 'Equipamentos'
+      case '/service-orders':
+        return 'Ordens de Serviço'
+      case '/services':
+        return 'Serviços'
+      case '/parts':
+        return 'Peças / Materiais'
+      case '/invoices':
+        return 'Cobranças'
       case '/reports':
         return 'Laudos Técnicos'
       case '/components-photos':
@@ -41,6 +93,7 @@ function AppRouter() {
       case '/dashboard':
         return 'Dashboard'
       default:
+        if (reportDocumentId) return 'Laudo técnico completo'
         return 'Ordens de Serviço'
     }
   })()
@@ -51,6 +104,14 @@ function AppRouter() {
         return 'Módulo de clientes'
       case '/equipment':
         return 'Módulo de equipamentos'
+      case '/service-orders':
+        return 'Fluxo operacional'
+      case '/services':
+        return 'Catálogo de serviços'
+      case '/parts':
+        return 'Catálogo de peças e materiais'
+      case '/invoices':
+        return 'Faturamento e invoices'
       case '/reports':
         return 'Módulo de laudos'
       case '/components-photos':
@@ -60,6 +121,7 @@ function AppRouter() {
       case '/dashboard':
         return 'Visão geral operacional'
       default:
+        if (reportDocumentId) return 'Documento visualizável para impressão'
         return 'Fluxo operacional'
     }
   })()
@@ -69,7 +131,7 @@ function AppRouter() {
       currentPath={path}
       title={pageTitle}
       subtitle={subtitle}
-      onNavigate={(nextPath) => {
+      onNavigate={(nextPath: string) => {
         window.history.pushState({}, '', nextPath)
         setPath(nextPath)
       }}

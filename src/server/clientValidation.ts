@@ -13,17 +13,20 @@ export type ClientValidationResult = {
 }
 
 export type ClientPayload = {
-  name?: string
-  type?: ClientPersonType | string
-  document?: string
-  street?: string
-  number?: string
-  complement?: string
-  neighborhood?: string
-  city?: string
-  state?: string
-  zipCode?: string
-  accountStatus?: string
+  name?: string | undefined
+  type?: ClientPersonType | string | undefined
+  document?: string | undefined
+  street?: string | undefined
+  number?: string | undefined
+  complement?: string | undefined
+  neighborhood?: string | undefined
+  city?: string | undefined
+  state?: string | undefined
+  zipCode?: string | undefined
+  primaryPhone?: string | undefined
+  whatsappNumber?: string | undefined
+  telegramHandle?: string | undefined
+  accountStatus?: string | undefined
 }
 
 export type ClientPayloadInput = Record<string, unknown> | null | undefined
@@ -56,6 +59,9 @@ export const normalizeClientPayload = (payload: ClientPayloadInput): ClientPaylo
     city: normalizeText(source.city),
     state: normalizeText(source.state)?.toUpperCase(),
     zipCode: normalizeText(source.zipCode),
+    primaryPhone: normalizeText(source.primaryPhone),
+    whatsappNumber: normalizeText(source.whatsappNumber),
+    telegramHandle: normalizeText(source.telegramHandle),
     accountStatus: normalizeText(source.accountStatus) ?? 'ATIVO',
   }
 }

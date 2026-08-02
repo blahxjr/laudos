@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import TechnicalReportTabs from './TechnicalReportTabs'
+import TechnicalReportTabs from './TechnicalReportTabs.js'
 
 type ServiceOrderItem = {
   id: string

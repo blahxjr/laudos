@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { buildWhatsAppFullSummary, buildWhatsAppShortSummary } from './whatsAppSummary.js'
 
 type Assistencia = {
   companyName?: string
@@ -125,6 +126,9 @@ export default function TechnicalReportTabs({ reportId }: { reportId: string }) 
   const [iaLoading, setIaLoading] = useState(false)
   const [iaError, setIaError] = useState<string | null>(null)
   const [iaSuccess, setIaSuccess] = useState(false)
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
+  const [sendLoading, setSendLoading] = useState(false)
+  const [sendFeedback, setSendFeedback] = useState<string | null>(null)
 
   useEffect(() => {
     const ac = new AbortController()
@@ -165,6 +169,47 @@ export default function TechnicalReportTabs({ reportId }: { reportId: string }) 
     setIaError(null)
     setIaSuccess(false)
   }, [report])
+
+  const handleCopyWhatsAppSummary = async (mode: 'full' | 'short') => {
+    if (!report) return
+
+    try {
+      const invoice = (report as any).financeiro?.invoice ?? null
+      const text = mode === 'short'
+        ? buildWhatsAppShortSummary(report, { protocol: meta.protocol }, invoice, window.location.origin)
+        : buildWhatsAppFullSummary(report, { protocol: meta.protocol }, invoice, window.location.origin)
+      await navigator.clipboard.writeText(text)
+      setCopyFeedback(mode === 'short' ? 'Resumo curto copiado para a área de transferência.' : 'Resumo completo copiado para a área de transferência.')
+    } catch (err) {
+      setCopyFeedback('Não foi possível copiar o resumo. Copie o texto manualmente.')
+    }
+  }
+
+  const handleSendSummaryViaGateway = async (mode: 'full' | 'short' = 'short') => {
+    if (!report) return
+
+    setSendLoading(true)
+    setSendFeedback(null)
+
+    try {
+      const response = await fetch('/communications/whatsapp/send-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reportId: report.meta?.id, mode }),
+      })
+
+      const payload = await response.json().catch(() => ({})) as { ok?: boolean; error?: string }
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Não foi possível enviar o resumo pelo gateway.')
+      }
+
+      setSendFeedback('Resumo enviado para WhatsApp via gateway.')
+    } catch (err) {
+      setSendFeedback(err instanceof Error ? err.message : 'Não foi possível enviar o resumo pelo gateway.')
+    } finally {
+      setSendLoading(false)
+    }
+  }
 
   const handleSuggestWithAI = async () => {
     if (!report) return
@@ -237,8 +282,48 @@ export default function TechnicalReportTabs({ reportId }: { reportId: string }) 
           <h2 id="report-title">{meta.protocol ?? meta.id}</h2>
           <p style={{ marginBottom: 0 }}>{assistencia.companyName || 'Assistência técnica'}</p>
         </div>
-        <div className={statusClassName(meta.status)}>{meta.status || 'Em revisão'}</div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="button-primary"
+            onClick={() => {
+              window.history.pushState({}, '', `/reports/${encodeURIComponent(meta.id)}/document`)
+              window.dispatchEvent(new PopStateEvent('popstate'))
+            }}
+          >
+            Ver laudo completo
+          </button>
+          <button
+            type="button"
+            className="button-primary"
+            onClick={() => handleCopyWhatsAppSummary('full')}
+            style={{ background: '#147d3b' }}
+          >
+            Copiar resumo completo
+          </button>
+          <button
+            type="button"
+            className="button-primary"
+            onClick={() => handleCopyWhatsAppSummary('short')}
+            style={{ background: '#2563eb' }}
+          >
+            Copiar resumo curto
+          </button>
+          <button
+            type="button"
+            className="button-primary"
+            onClick={() => handleSendSummaryViaGateway('short')}
+            style={{ background: '#0f766e' }}
+            disabled={sendLoading}
+          >
+            {sendLoading ? 'Enviando...' : 'Enviar via WhatsApp (gateway)'}
+          </button>
+          <div className={statusClassName(meta.status)}>{meta.status || 'Em revisão'}</div>
+        </div>
       </div>
+
+      {copyFeedback ? <p className="feedback-success" style={{ margin: '12px 24px 0' }}>{copyFeedback}</p> : null}
+      {sendFeedback ? <p className="feedback-success" style={{ margin: '12px 24px 0' }}>{sendFeedback}</p> : null}
 
       <nav aria-label="Laudo tabs" className="tab-nav">
         {tabBtn('assistencia', 'Assistência')}

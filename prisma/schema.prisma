@@ -160,14 +160,16 @@ model ServiceCatalog {
 }
 
 model PartCatalog {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  price       Decimal  @default(0)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  items       ServiceOrderItem[]
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  price          Decimal  @default(0)
+  stockQuantity  Int      @default(0)
+  minimumStock   Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  items          ServiceOrderItem[]
 
   @@map("part_catalog")
 }
@@ -314,4 +316,32 @@ model ReportPhoto {
   updatedAt         DateTime        @updatedAt
 
   @@map("report_photos")
+}
+
+model AppSetting {
+  id        String   @id @default(cuid())
+  category  String
+  key       String
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@unique([category, key])
+  @@map("app_settings")
+}
+
+model WhatsAppConnection {
+  id               String   @id @default(cuid())
+  provider         String
+  instanceName     String   @unique
+  status           String
+  qrCodeBase64     String?
+  phoneNumber      String?
+  lastErrorCode    String?
+  lastErrorMessage String?
+  connectedAt      DateTime?
+  lastSeenAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("whatsapp_connections")
 }

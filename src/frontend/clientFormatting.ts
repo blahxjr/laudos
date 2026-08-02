@@ -77,7 +77,8 @@ export const parseClientApiErrors = (payload: unknown) => {
   const normalized = errorText.toLowerCase()
 
   if (payload && typeof payload === 'object' && 'errors' in payload) {
-    const errors = Array.isArray((payload as { errors?: unknown }).errors) ? (payload as { errors?: unknown[] }).errors : []
+    const candidate = payload as { errors?: unknown }
+    const errors = Array.isArray(candidate.errors) ? candidate.errors : []
     for (const item of errors) {
       if (!item || typeof item !== 'object') continue
       const candidate = item as { field?: unknown; message?: unknown; code?: unknown }

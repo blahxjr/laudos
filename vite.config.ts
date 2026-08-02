@@ -16,8 +16,13 @@ export default defineConfig({
       '/reports': 'http://localhost:3000',
       '/clients': 'http://localhost:3000',
       '/equipments': 'http://localhost:3000',
+      '/communications': 'http://localhost:3000',
+      '/services': 'http://localhost:3000',
+      '/parts': 'http://localhost:3000',
       '/ai': 'http://localhost:3000',
       '/health': 'http://localhost:3000',
+      '/dashboard': 'http://localhost:3000',
+      '/settings/whatsapp': 'http://localhost:3000',
     },
   },
 })

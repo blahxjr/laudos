@@ -43,5 +43,11 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "tmp-client-create.ts",
+    "tmp-prisma-debug.ts",
+    "scripts/tmp-prisma-debug.ts"
+  ]
 }

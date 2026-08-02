@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildDiagnosticContext } from './TechnicalReportTabs'
+import { buildDiagnosticContext } from './TechnicalReportTabs.js'
 
 test('buildDiagnosticContext assembles the main diagnostic fields', () => {
   const report = {

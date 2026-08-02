@@ -69,8 +69,8 @@ async function main() {
 
   const partCatalogItems = await prisma.partCatalog.createMany({
     data: [
-      { name: 'Fonte compatível 90W', description: 'Fonte de alimentação compatível para notebooks.', price: 150.0 },
-      { name: 'Pasta térmica', description: 'Pasta térmica para resfriamento do processador.', price: 35.0 },
+      { name: 'Fonte compatível 90W', description: 'Fonte de alimentação compatível para notebooks.', price: 150.0, stockQuantity: 10, minimumStock: 3 },
+      { name: 'Pasta térmica', description: 'Pasta térmica para resfriamento do processador.', price: 35.0, stockQuantity: 6, minimumStock: 2 },
     ],
   })
 
