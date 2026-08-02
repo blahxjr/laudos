@@ -8,6 +8,7 @@ import InvoicesPage from './InvoicesPage.js'
 import TechnicalReportDocument from './TechnicalReportDocument.js'
 import DashboardPage from './DashboardPage.js'
 import SettingsPage from './SettingsPage.js'
+import ConversationsInboxPage from './pages/ConversationsInboxPage.js'
 import './designSystem.css'
 
 function AppRouter() {
@@ -23,6 +24,10 @@ function AppRouter() {
     ? path.split('/')[2]
     : null
 
+  const serviceOrderRouteOrderId = path.startsWith('/service-orders/')
+    ? path.split('/')[2] || null
+    : null
+
   const pageContent = useMemo(() => {
     if (reportDocumentId) {
       return <TechnicalReportDocument reportId={reportDocumentId} />
@@ -35,6 +40,9 @@ function AppRouter() {
         return <div className="sheet" style={{ padding: 24 }}><h3>Equipamentos</h3><p>Gerenciamento de equipamentos em fase de estruturação.</p></div>
       case '/service-orders':
         return <ServiceOrdersPage />
+      case '/communications':
+      case '/inbox':
+        return <ConversationsInboxPage />
       case '/services':
         return <CatalogPage
           title="Serviços"
@@ -66,9 +74,12 @@ function AppRouter() {
       case '/dashboard':
         return <DashboardPage />
       default:
+        if (serviceOrderRouteOrderId) {
+          return <ServiceOrdersPage initialOrderId={serviceOrderRouteOrderId} />
+        }
         return <DashboardPage />
     }
-  }, [path])
+  }, [path, serviceOrderRouteOrderId])
 
   const pageTitle = (() => {
     switch (path) {
@@ -78,6 +89,9 @@ function AppRouter() {
         return 'Equipamentos'
       case '/service-orders':
         return 'Ordens de Serviço'
+      case '/communications':
+      case '/inbox':
+        return 'Inbox WhatsApp'
       case '/services':
         return 'Serviços'
       case '/parts':
@@ -94,6 +108,7 @@ function AppRouter() {
         return 'Dashboard'
       default:
         if (reportDocumentId) return 'Laudo técnico completo'
+        if (serviceOrderRouteOrderId) return 'Ordens de Serviço'
         return 'Ordens de Serviço'
     }
   })()
@@ -106,6 +121,9 @@ function AppRouter() {
         return 'Módulo de equipamentos'
       case '/service-orders':
         return 'Fluxo operacional'
+      case '/communications':
+      case '/inbox':
+        return 'Atendimento de conversas'
       case '/services':
         return 'Catálogo de serviços'
       case '/parts':
@@ -122,6 +140,7 @@ function AppRouter() {
         return 'Visão geral operacional'
       default:
         if (reportDocumentId) return 'Documento visualizável para impressão'
+        if (serviceOrderRouteOrderId) return 'Fluxo operacional'
         return 'Fluxo operacional'
     }
   })()

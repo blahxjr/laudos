@@ -128,6 +128,13 @@ O projeto ainda precisa evoluir em algumas áreas de interface, cobertura de tes
   - Próximos passos: criar tela de atendimento consumindo `GET /communications/conversations/recent`; adicionar campos formais de `externalMessageId/rawPayload/messageTimestamp` no schema para reduzir sobrecarga semântica dos campos reaproveitados; evoluir suporte a mídia.
   - Tags: `#whatsapp`, `#webhook`, `#conversations`, `#messages`, `#backend`
 
+- **2026-08-02** — Micro Sprint 6 concluído: Inbox web de conversas WhatsApp.
+  - Arquivos tocados: `src/frontend/pages/ConversationsInboxPage.tsx`, `src/frontend/ConversationDetailPanel.tsx`, `src/frontend/httpClient.ts`, `src/frontend/main.tsx`, `src/frontend/AppShell.tsx`, `src/frontend/ServiceOrdersPage.tsx`, `src/frontend/designSystem.css`, `tests/conversationsInbox.test.mjs`, `tests/communicationsRecent.test.mjs`, `docs/dev-notes.md`, `PROJECT_MEMORY.md`
+  - Resumo: criada rota de inbox (`/communications` e alias `/inbox`) com lista de conversas recentes, filtro por telefone, seleção de conversa e painel de detalhes com cliente/OS/última mensagem. O painel ganhou atalho para abrir OS vinculada e preview de mensagens recentes carregado por detalhe da conversa.
+  - Impacto: o módulo de comunicação saiu do estado apenas backend e passou a ter uma interface operacional mínima para atendimento, já integrada ao fluxo de OS existente.
+  - Próximos passos: implementar envio de mensagens outbound direto da inbox, ação real de "Criar OS a partir da conversa" e paginação/atualização em tempo real da lista.
+  - Tags: `#whatsapp`, `#inbox`, `#frontend`, `#os`, `#comunicacao`
+
 ## Backlog de próximos passos
 
 ### Alta prioridade

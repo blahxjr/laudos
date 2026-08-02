@@ -51,7 +51,11 @@ type ActivityItem = {
   createdAt: string
 }
 
-export default function ServiceOrdersPage() {
+type ServiceOrdersPageProps = {
+  initialOrderId?: string | null
+}
+
+export default function ServiceOrdersPage({ initialOrderId = null }: ServiceOrdersPageProps) {
   const [orders, setOrders] = useState<ServiceOrderItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -101,10 +105,13 @@ export default function ServiceOrdersPage() {
       .then((data) => {
         const list: ServiceOrderItem[] = Array.isArray(data) ? data : data.data || []
         setOrders(list)
+        if (initialOrderId && list.some((item) => item.id === initialOrderId)) {
+          setSelectedOrderId(initialOrderId)
+        }
       })
       .catch((err) => setError(err.message || 'Erro ao carregar ordens'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [initialOrderId])
 
   useEffect(() => {
     if (!selectedOrderId) return

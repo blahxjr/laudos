@@ -23,6 +23,7 @@ const navItems: NavItem[] = [
   { path: '/services', label: 'Serviços', description: 'Catálogo de serviços' },
   { path: '/parts', label: 'Peças / Materiais', description: 'Catálogo de peças' },
   { path: '/invoices', label: 'Cobranças', description: 'Faturamento e invoices' },
+  { path: '/inbox', label: 'Conversas', description: 'Inbox WhatsApp' },
   { path: '/reports', label: 'Laudos Técnicos', description: 'Relatórios e pareceres' },
   { path: '/components-photos', label: 'Componentes e Fotos', description: 'Itens e imagens' },
   { path: '/settings', label: 'Configurações', description: 'Assistência' },
@@ -53,7 +54,7 @@ export default function AppShell({ currentPath, title, subtitle, actions, onNavi
 
           <nav className="side-nav" aria-label="Menu principal">
             {navItems.map((item) => {
-              const active = currentPath === item.path
+              const active = currentPath === item.path || currentPath.startsWith(`${item.path}/`)
               return (
                 <a
                   key={item.path}

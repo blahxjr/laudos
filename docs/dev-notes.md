@@ -249,6 +249,57 @@ APP_BASE_URL=http://localhost:5173
 - `npx vite build` — build do frontend concluído com sucesso.
 - `npx tsc --noEmit` — sem erros de TypeScript.
 
+## Micro Sprint 6 — Inbox web de conversas WhatsApp
+
+### O que foi implementado
+
+- Nova rota de frontend para atendimento de conversas:
+  - `/communications` (principal)
+  - `/inbox` (alias)
+- Novo item no menu lateral: **Conversas**.
+- Nova tela de inbox com layout de duas colunas:
+  - coluna esquerda com lista de conversas recentes;
+  - coluna direita com painel de detalhes da conversa selecionada.
+- Integração com backend via `GET /communications/conversations/recent`:
+  - carregamento inicial,
+  - estados de loading, vazio e erro,
+  - filtro por telefone com limpar filtro.
+- Painel de detalhes da conversa:
+  - telefone, nome, cliente, status,
+  - OS vinculada com botão **Abrir OS**,
+  - resumo da última mensagem,
+  - preview de mensagens recentes via `GET /communications/conversations/:id`.
+- Navegação para OS específica:
+  - suporte a `/service-orders/:id` no roteador frontend,
+  - `ServiceOrdersPage` aceita `initialOrderId` para abrir a OS diretamente.
+- Novo cliente HTTP para comunicações usando parser seguro:
+  - `fetchRecentConversations` com filtro opcional,
+  - `fetchConversationDetail`.
+
+### Estilo e UX
+
+- Estilos da inbox incorporados ao `designSystem.css`:
+  - cards de conversa,
+  - skeleton de carregamento,
+  - painel de detalhes,
+  - responsividade (desktop em 2 colunas, mobile em pilha).
+
+### Testes adicionados
+
+- `tests/conversationsInbox.test.mjs`
+  - endpoint builder do filtro,
+  - formatação de telefone,
+  - truncamento de mensagem.
+- `tests/communicationsRecent.test.mjs`
+  - integração do endpoint `GET /communications/conversations/recent`,
+  - validação de filtro por telefone no `where`.
+
+### Validação
+
+- `npm test` — 45 testes aprovados, 0 falhas.
+- `npx vite build` — build do frontend concluído com sucesso.
+- `npx tsc --noEmit` — sem erros de TypeScript.
+
 ## Arquitetura de agentes e uso de IA no desenvolvimento
 
 O projeto utiliza uma arquitetura colaborativa de agentes para orientar evolução, qualidade e coordenação entre frontend, backend, banco e IA.
