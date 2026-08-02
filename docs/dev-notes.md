@@ -87,6 +87,28 @@ npm run frontend:dev
 - O Prisma client gerado fica em `generated/prisma`.
 - A conexão com o banco é controlada por `DATABASE_URL`.
 
+## Sprint Passo 1 — Fluxo avançado de OS (status + atividades)
+
+### O que foi implementado
+
+- Introdução de um enum de status operacional para OS com valores: `ABERTA`, `EM_DIAGNOSTICO`, `AGUARDANDO_CLIENTE`, `CONCLUIDA` e `SEM_CONSERTO`.
+- Novo modelo Prisma `ServiceOrderActivity` para registrar eventos e acompanhamento da OS.
+- Novos endpoints de API:
+  - `GET /service-orders/:id/activities`
+  - `POST /service-orders/:id/activities`
+  - `PUT /service-orders/:id/status`
+- Interface da tela de OS atualizada para mostrar:
+  - seletor de status com atualização imediata;
+  - formulário para registrar atividade;
+  - lista cronológica das atividades da ordem.
+- Seed atualizado para incluir exemplos de OS com diferentes status e atividades.
+
+### Pontos de atenção
+
+- O status continua validado no backend antes de persistir, preservando a consistência operacional.
+- A UI da OS continua compatível com o fluxo de laudo em abas e com a navegação atual.
+- A próxima evolução natural é ampliar a atividade para eventos automáticos como criação de orçamento, cobrança gerada e envio por WhatsApp.
+
 ## Arquitetura de agentes e uso de IA no desenvolvimento
 
 O projeto utiliza uma arquitetura colaborativa de agentes para orientar evolução, qualidade e coordenação entre frontend, backend, banco e IA.

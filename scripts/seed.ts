@@ -34,9 +34,118 @@ async function main() {
       protocol: `OS-${new Date().getFullYear()}-SEED-${Date.now()}`,
       clientId: client.id,
       equipmentId: equipment.id,
-      status: 'ABERTA',
+      status: 'CONCLUIDA',
       priority: 'ALTA',
       notes: 'Seed de validação do fluxo.',
+      activities: {
+        create: [
+          { type: 'STATUS', message: 'OS criada e encaminhada para diagnóstico.', author: 'Sistema' },
+          { type: 'NOTE', message: 'Cliente relatou falha ao ligar o equipamento.', author: 'Cliente' },
+        ],
+      },
+    },
+  })
+
+  const secondServiceOrder = await prisma.serviceOrder.create({
+    data: {
+      protocol: `OS-${new Date().getFullYear()}-SEED-${Date.now() + 1}`,
+      clientId: client.id,
+      equipmentId: equipment.id,
+      status: 'AGUARDANDO_CLIENTE',
+      priority: 'MEDIA',
+      notes: 'OS aguardando retorno do cliente.',
+      activities: {
+        create: [{ type: 'STATUS', message: 'OS aguardando aprovação do orçamento.', author: 'Técnico' }],
+      },
+    },
+  })
+
+  const serviceCatalogItems = await prisma.serviceCatalog.createMany({
+    data: [
+      { name: 'Troca de fonte', description: 'Serviço de diagnóstico e substituição de fonte de alimentação.', price: 180.0 },
+      { name: 'Limpeza interna', description: 'Limpeza e manutenção preventiva do equipamento.', price: 120.0 },
+    ],
+  })
+
+  const partCatalogItems = await prisma.partCatalog.createMany({
+    data: [
+      { name: 'Fonte compatível 90W', description: 'Fonte de alimentação compatível para notebooks.', price: 150.0 },
+      { name: 'Pasta térmica', description: 'Pasta térmica para resfriamento do processador.', price: 35.0 },
+    ],
+  })
+
+  const [serviceCatalog, partCatalog] = await Promise.all([
+    prisma.serviceCatalog.findFirst({ where: { name: 'Troca de fonte' } }),
+    prisma.partCatalog.findFirst({ where: { name: 'Fonte compatível 90W' } }),
+  ])
+
+  if (!serviceCatalog || !partCatalog) {
+    throw new Error('Seed prerequisites not found: catalog items')
+  }
+
+  const orderItems = await prisma.serviceOrderItem.createMany({
+    data: [
+      {
+        serviceOrderId: serviceOrder.id,
+        type: 'SERVICO',
+        serviceCatalogId: serviceCatalog.id,
+        description: serviceCatalog.name,
+        quantity: 1,
+        unitPrice: Number(serviceCatalog.price),
+        totalPrice: Number(serviceCatalog.price),
+      },
+      {
+        serviceOrderId: serviceOrder.id,
+        type: 'PARTE',
+        partCatalogId: partCatalog.id,
+        description: partCatalog.name,
+        quantity: 1,
+        unitPrice: Number(partCatalog.price),
+        totalPrice: Number(partCatalog.price),
+      },
+    ],
+  })
+
+  const serviceOrderItems = await prisma.serviceOrderItem.findMany({ where: { serviceOrderId: serviceOrder.id } })
+  const invoiceSubtotal = serviceOrderItems.reduce((sum, item) => sum + Number(item.totalPrice ?? 0), 0)
+
+  await prisma.invoice.create({
+    data: {
+      serviceOrderId: serviceOrder.id,
+      clientId: client.id,
+      subtotal: invoiceSubtotal,
+      discountAmount: 0,
+      total: invoiceSubtotal,
+      status: 'PENDENTE',
+      issuedAt: new Date(),
+    },
+  })
+
+  const channel = await prisma.channel.create({
+    data: {
+      type: 'WHATSAPP_WEB',
+      name: 'WhatsApp de atendimento',
+      isActive: true,
+    },
+  })
+
+  const conversation = await prisma.conversation.create({
+    data: {
+      channelId: channel.id,
+      clientId: client.id,
+      serviceOrderId: serviceOrder.id,
+      externalId: '+5511999999999',
+      status: 'OPEN',
+    },
+  })
+
+  await prisma.message.create({
+    data: {
+      conversationId: conversation.id,
+      direction: 'INBOUND',
+      type: 'TEXT',
+      content: 'Olá, meu notebook não liga.',
+      receivedAt: new Date(),
     },
   })
 
@@ -94,6 +203,7 @@ async function main() {
     clientId: client.id,
     equipmentId: equipment.id,
     serviceOrderId: serviceOrder.id,
+    secondServiceOrderId: secondServiceOrder.id,
     reportId: report.id,
   }, null, 2))
 }

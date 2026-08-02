@@ -15,23 +15,80 @@ enum ClientType {
   PJ
 }
 
+enum ChannelType {
+  WHATSAPP_WEB
+  WHATSAPP_BUSINESS_API
+  TELEGRAM
+  WEB_CHAT
+}
+
+enum ConversationStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  DOCUMENT
+  AUDIO
+  VIDEO
+}
+
+enum ServiceOrderSource {
+  WEB
+  WHATSAPP
+  TELEGRAM
+  OTHER
+}
+
+enum ServiceOrderItemType {
+  SERVICO
+  PARTE
+}
+
+enum ServiceOrderStatus {
+  ABERTA
+  EM_DIAGNOSTICO
+  AGUARDANDO_CLIENTE
+  CONCLUIDA
+  SEM_CONSERTO
+}
+
+enum InvoiceStatus {
+  PENDENTE
+  PAGO
+  CANCELADA
+}
+
 model Client {
-  id            String        @id @default(cuid())
-  name          String
-  type          ClientType
-  document      String?
-  street        String?
-  number        String?
-  complement    String?
-  neighborhood  String?
-  city          String?
-  state         String?
-  zipCode       String?
-  accountStatus String        @default("ATIVO")
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  equipments    Equipment[]
-  serviceOrders ServiceOrder[]
+  id             String         @id @default(cuid())
+  name           String
+  type           ClientType
+  document       String?
+  street         String?
+  number         String?
+  complement     String?
+  neighborhood   String?
+  city           String?
+  state          String?
+  zipCode        String?
+  primaryPhone   String?
+  whatsappNumber String?
+  telegramHandle String?
+  accountStatus  String         @default("ATIVO")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  equipments      Equipment[]
+  serviceOrders   ServiceOrder[]
+  conversations   Conversation[]
+  invoices        Invoice[]
 
   @@map("clients")
 }
@@ -52,22 +109,150 @@ model Equipment {
 }
 
 model ServiceOrder {
-  id              String           @id @default(cuid())
-  protocol        String           @unique
-  clientId        String
-  equipmentId     String
-  status          String
-  priority        String           @default("MEDIA")
-  assignedUserId  String?
-  notes           String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  closedAt        DateTime?
-  client          Client           @relation(fields: [clientId], references: [id])
-  equipment       Equipment        @relation(fields: [equipmentId], references: [id])
-  technicalReport TechnicalReport?
+  id                    String                @id @default(cuid())
+  protocol              String                @unique
+  clientId              String
+  equipmentId           String
+  status                ServiceOrderStatus    @default(ABERTA)
+  priority              String                @default("MEDIA")
+  assignedUserId        String?
+  notes                 String?
+  source                ServiceOrderSource    @default(WEB)
+  primaryConversationId String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  closedAt              DateTime?
+  client                Client                @relation(fields: [clientId], references: [id])
+  equipment             Equipment             @relation(fields: [equipmentId], references: [id])
+  technicalReport       TechnicalReport?
+  conversations         Conversation[]
+  items                 ServiceOrderItem[]
+  invoices              Invoice[]
+  activities            ServiceOrderActivity[]
 
   @@map("service_orders")
+}
+
+model ServiceOrderActivity {
+  id              String        @id @default(cuid())
+  serviceOrderId  String
+  serviceOrder    ServiceOrder  @relation(fields: [serviceOrderId], references: [id])
+  type            String        @default("NOTE")
+  message         String
+  author          String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("service_order_activities")
+}
+
+model ServiceCatalog {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  price       Decimal  @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  items       ServiceOrderItem[]
+
+  @@map("service_catalog")
+}
+
+model PartCatalog {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  price       Decimal  @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  items       ServiceOrderItem[]
+
+  @@map("part_catalog")
+}
+
+model ServiceOrderItem {
+  id               String              @id @default(cuid())
+  serviceOrderId   String
+  type             ServiceOrderItemType
+  serviceCatalogId String?
+  partCatalogId    String?
+  description      String
+  quantity         Int                @default(1)
+  unitPrice        Decimal            @default(0)
+  totalPrice       Decimal            @default(0)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  serviceOrder     ServiceOrder       @relation(fields: [serviceOrderId], references: [id])
+  serviceCatalog   ServiceCatalog?    @relation(fields: [serviceCatalogId], references: [id])
+  partCatalog      PartCatalog?       @relation(fields: [partCatalogId], references: [id])
+
+  @@map("service_order_items")
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  serviceOrderId String
+  clientId       String
+  subtotal       Decimal       @default(0)
+  discountAmount Decimal       @default(0)
+  total          Decimal       @default(0)
+  status         InvoiceStatus @default(PENDENTE)
+  issuedAt       DateTime      @default(now())
+  paidAt         DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  serviceOrder   ServiceOrder  @relation(fields: [serviceOrderId], references: [id])
+  client         Client        @relation(fields: [clientId], references: [id])
+
+  @@map("invoices")
+}
+
+model Channel {
+  id        String        @id @default(cuid())
+  type      ChannelType
+  name      String?
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  conversations Conversation[]
+
+  @@map("channels")
+}
+
+model Conversation {
+  id             String             @id @default(cuid())
+  channelId      String
+  clientId       String?
+  serviceOrderId String?
+  externalId     String?
+  status         ConversationStatus @default(OPEN)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  channel         Channel           @relation(fields: [channelId], references: [id])
+  client          Client?           @relation(fields: [clientId], references: [id])
+  serviceOrder    ServiceOrder?     @relation(fields: [serviceOrderId], references: [id])
+  messages        Message[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  conversationId  String
+  direction      MessageDirection
+  type           MessageType
+  content        String?
+  mediaUrl       String?
+  mediaId        String?
+  sentAt         DateTime?
+  receivedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  conversation   Conversation     @relation(fields: [conversationId], references: [id])
+
+  @@map("messages")
 }
 
 model TechnicalReport {

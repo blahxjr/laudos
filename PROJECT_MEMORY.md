@@ -51,6 +51,13 @@ O projeto ainda precisa evoluir em algumas áreas de interface, cobertura de tes
   - Status: build Vite e TypeScript passados; testes recomendados antes do commit.
   - Tags: `#laudos`, `#erp`, `#ux`, `#comunicacao`
 
+- **2026-08-02** — Sprint Passo 1 concluído: fluxo avançado de OS com status e atividades.
+  - Arquivos tocados: `prisma/schema.prisma`, `src/server.ts`, `src/server/serviceOrderStatus.ts`, `src/frontend/ServiceOrdersPage.tsx`, `src/frontend/designSystem.css`, `scripts/seed.ts`, `docs/dev-notes.md`, `PROJECT_MEMORY.md`
+  - Resumo: implementação de status operacional para OS, modelo de atividades da ordem, endpoints de leitura/registro e atualização de status, além de interface na tela de ordens para acompanhamento das atividades.
+  - Impacto: frontend e backend passaram a suportar um fluxo operacional mais rico para acompanhamento da OS sem quebrar a navegação de laudos em abas.
+  - Próximos passos: expandir atividades automáticas para cobrança, envio por WhatsApp e integração com IA de diagnóstico.
+  - Tags: `#os`, `#frontend`, `#backend`, `#prisma`, `#ux`
+
 ## Backlog de próximos passos
 
 ### Alta prioridade

@@ -5,6 +5,8 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
 import { PrismaClient } from '../generated/prisma/client.js'
 import { createClientApiErrorPayload, createClientValidationErrors, normalizeClientPayload } from './server/clientValidation.js'
+import { createCommunicationsRouter } from './server/communicationsRouter.js'
+import { SERVICE_ORDER_STATUS_OPTIONS, validateServiceOrderStatus } from './server/serviceOrderStatus.js'
 
 // PrismaClient configurado para ESM (NodeNext).
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000
@@ -25,6 +27,7 @@ async function createServer() {
   const app = express()
   app.use(express.json())
   app.use(cors())
+  app.use('/communications', createCommunicationsRouter(prisma))
 
   app.get('/health', async (_req: Request, res: Response) => {
     try {
@@ -56,7 +59,7 @@ async function createServer() {
       }
     }
 
-    return { valid: errors.length === 0, errors: errors.map((error) => ({ field: error.field, message: error.message, code: error.code })) }
+    return { valid: errors.length === 0, errors }
   }
 
   app.get('/clients', async (req: Request, res: Response) => {
@@ -121,6 +124,9 @@ async function createServer() {
         city: payload.city,
         state: payload.state,
         zipCode: payload.zipCode,
+        primaryPhone: payload.primaryPhone,
+        whatsappNumber: payload.whatsappNumber,
+        telegramHandle: payload.telegramHandle,
         accountStatus: payload.accountStatus,
       }
 
@@ -158,6 +164,9 @@ async function createServer() {
         city: payload.city,
         state: payload.state,
         zipCode: payload.zipCode,
+        primaryPhone: payload.primaryPhone,
+        whatsappNumber: payload.whatsappNumber,
+        telegramHandle: payload.telegramHandle,
         accountStatus: payload.accountStatus,
       }
 
@@ -314,7 +323,7 @@ async function createServer() {
   /* ServiceOrder routes                                                         */
   /* -------------------------------------------------------------------------- */
 
-  const SERVICE_ORDER_STATUSES = ['ABERTA', 'EM_DIAGNOSTICO', 'AGUARDANDO_CLIENTE', 'CONCLUIDA', 'SEM_CONSERTO']
+  const SERVICE_ORDER_STATUSES = SERVICE_ORDER_STATUS_OPTIONS.map((option) => option.value)
   const SERVICE_ORDER_PRIORITIES = ['BAIXA', 'MEDIA', 'ALTA']
 
   const generateProtocol = async () => {
@@ -337,7 +346,10 @@ async function createServer() {
       if (!clientId || typeof clientId !== 'string' || !clientId.trim()) errors.push('Field "clientId" is required')
       if (!equipmentId || typeof equipmentId !== 'string' || !equipmentId.trim()) errors.push('Field "equipmentId" is required')
     }
-    if (status !== undefined && !SERVICE_ORDER_STATUSES.includes(status)) errors.push('Invalid status')
+    if (status !== undefined) {
+      const statusValidation = validateServiceOrderStatus(status)
+      if (!statusValidation.valid) errors.push(statusValidation.error ?? 'Invalid status')
+    }
     if (priority !== undefined && !SERVICE_ORDER_PRIORITIES.includes(priority)) errors.push('Invalid priority')
 
     return { valid: errors.length === 0, errors }
@@ -449,21 +461,466 @@ async function createServer() {
     }
   })
 
-  /* -------------------------------------------------------------------------- */
-  /* TechnicalReport routes                                                      */
-  /* -------------------------------------------------------------------------- */
+  app.get('/service-orders/:id/activities', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing id' })
+
+    try {
+      const activities = await prisma.serviceOrderActivity.findMany({
+        where: { serviceOrderId: id },
+        orderBy: { createdAt: 'asc' },
+      })
+      res.json({ data: activities })
+    } catch (err) {
+      console.error('GET /service-orders/:id/activities error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.post('/service-orders/:id/activities', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing id' })
+
+    try {
+      const existing = await prisma.serviceOrder.findUnique({ where: { id } })
+      if (!existing) return res.status(404).json({ error: 'ServiceOrder not found' })
+
+      const payload = req.body ?? {}
+      const message = typeof payload.message === 'string' ? payload.message.trim() : ''
+      const author = typeof payload.author === 'string' && payload.author.trim() ? payload.author.trim() : null
+      const type = typeof payload.type === 'string' && payload.type.trim() ? payload.type.trim().toUpperCase() : 'NOTE'
+
+      if (!message) return res.status(400).json({ error: 'Field "message" is required' })
+
+      const created = await prisma.serviceOrderActivity.create({
+        data: {
+          serviceOrderId: id,
+          type,
+          message,
+          author: author ?? undefined,
+        },
+      })
+      res.status(201).json(created)
+    } catch (err) {
+      console.error('POST /service-orders/:id/activities error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.put('/service-orders/:id/status', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing id' })
+
+    try {
+      const payload = req.body ?? {}
+      const status = typeof payload.status === 'string' ? payload.status.trim().toUpperCase() : undefined
+      const statusValidation = validateServiceOrderStatus(status)
+      if (!statusValidation.valid) return res.status(400).json({ error: statusValidation.error })
+
+      const existing = await prisma.serviceOrder.findUnique({ where: { id } })
+      if (!existing) return res.status(404).json({ error: 'ServiceOrder not found' })
+
+      const normalizedStatus = status as any
+      const closedAt = normalizedStatus === 'CONCLUIDA' ? (existing.closedAt ?? new Date()) : null
+      const updated = await prisma.serviceOrder.update({
+        where: { id },
+        data: { status: normalizedStatus, closedAt },
+      })
+
+      const activityMessage = typeof payload.message === 'string' && payload.message.trim()
+        ? payload.message.trim()
+        : `Status atualizado para ${normalizedStatus}.`
+      const activityAuthor = typeof payload.author === 'string' && payload.author.trim() ? payload.author.trim() : 'Sistema'
+      const activity = await prisma.serviceOrderActivity.create({
+        data: {
+          serviceOrderId: id,
+          type: 'STATUS',
+          message: activityMessage,
+          author: activityAuthor,
+        },
+      })
+
+      res.json({ serviceOrder: updated, activity })
+    } catch (err) {
+      console.error('PUT /service-orders/:id/status error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
 
   const parseDecimal = (value: any) => {
     if (value === null || value === undefined || value === '') return null
     if (typeof value === 'number') return value
     if (typeof value === 'string') {
-      // Accept formats like "1.234,56" or "1234.56" or "1234,56"
       const cleaned = value.replace(/\./g, '').replace(',', '.')
       const n = Number(cleaned)
       return Number.isNaN(n) ? null : n
     }
     return null
   }
+
+  const calculateTotalPrice = (quantity: number, unitPrice: number) => {
+    return Number((quantity * unitPrice).toFixed(2))
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /* Catalog and Billing routes                                                   */
+  /* -------------------------------------------------------------------------- */
+
+  app.get('/services/catalog', async (_req: Request, res: Response) => {
+    try {
+      const services = await prisma.serviceCatalog.findMany({ orderBy: { createdAt: 'desc' } })
+      res.json({ data: services })
+    } catch (err) {
+      console.error('GET /services/catalog error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.post('/services/catalog', async (req: Request, res: Response) => {
+    try {
+      const { name, description, price } = req.body
+      const normalizedPrice = parseDecimal(price)
+      if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Field "name" is required' })
+      if (normalizedPrice === null || normalizedPrice < 0) return res.status(400).json({ error: 'Field "price" must be a valid non-negative number' })
+
+      const created = await prisma.serviceCatalog.create({ data: { name, description, price: normalizedPrice } })
+      res.status(201).json(created)
+    } catch (err) {
+      console.error('POST /services/catalog error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.put('/services/catalog/:id', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing id' })
+    try {
+      const { name, description, price, isActive } = req.body
+      const normalizedPrice = price !== undefined ? parseDecimal(price) : undefined
+      if (name !== undefined && typeof name !== 'string') return res.status(400).json({ error: 'Field "name" must be a string' })
+      if (normalizedPrice !== undefined && (normalizedPrice === null || normalizedPrice < 0)) return res.status(400).json({ error: 'Field "price" must be a valid non-negative number' })
+
+      const existing = await prisma.serviceCatalog.findUnique({ where: { id } })
+      if (!existing) return res.status(404).json({ error: 'ServiceCatalog item not found' })
+
+      const data: any = {}
+      if (name !== undefined) data.name = name
+      if (description !== undefined) data.description = description
+      if (normalizedPrice !== undefined) data.price = normalizedPrice
+      if (isActive !== undefined) data.isActive = isActive
+
+      const updated = await prisma.serviceCatalog.update({ where: { id }, data })
+      res.json(updated)
+    } catch (err) {
+      console.error('PUT /services/catalog/:id error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.delete('/services/catalog/:id', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing id' })
+    try {
+      const existing = await prisma.serviceCatalog.findUnique({ where: { id } })
+      if (!existing) return res.status(404).json({ error: 'ServiceCatalog item not found' })
+
+      const updated = await prisma.serviceCatalog.update({ where: { id }, data: { isActive: false } })
+      res.json({ message: 'ServiceCatalog item marked as inactive', service: updated })
+    } catch (err) {
+      console.error('DELETE /services/catalog/:id error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.get('/parts/catalog', async (_req: Request, res: Response) => {
+    try {
+      const parts = await prisma.partCatalog.findMany({ orderBy: { createdAt: 'desc' } })
+      res.json({ data: parts })
+    } catch (err) {
+      console.error('GET /parts/catalog error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.post('/parts/catalog', async (req: Request, res: Response) => {
+    try {
+      const { name, description, price } = req.body
+      const normalizedPrice = parseDecimal(price)
+      if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Field "name" is required' })
+      if (normalizedPrice === null || normalizedPrice < 0) return res.status(400).json({ error: 'Field "price" must be a valid non-negative number' })
+
+      const created = await prisma.partCatalog.create({ data: { name, description, price: normalizedPrice } })
+      res.status(201).json(created)
+    } catch (err) {
+      console.error('POST /parts/catalog error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.put('/parts/catalog/:id', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing id' })
+    try {
+      const { name, description, price, isActive } = req.body
+      const normalizedPrice = price !== undefined ? parseDecimal(price) : undefined
+      if (name !== undefined && typeof name !== 'string') return res.status(400).json({ error: 'Field "name" must be a string' })
+      if (normalizedPrice !== undefined && (normalizedPrice === null || normalizedPrice < 0)) return res.status(400).json({ error: 'Field "price" must be a valid non-negative number' })
+
+      const existing = await prisma.partCatalog.findUnique({ where: { id } })
+      if (!existing) return res.status(404).json({ error: 'PartCatalog item not found' })
+
+      const data: any = {}
+      if (name !== undefined) data.name = name
+      if (description !== undefined) data.description = description
+      if (normalizedPrice !== undefined) data.price = normalizedPrice
+      if (isActive !== undefined) data.isActive = isActive
+
+      const updated = await prisma.partCatalog.update({ where: { id }, data })
+      res.json(updated)
+    } catch (err) {
+      console.error('PUT /parts/catalog/:id error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.delete('/parts/catalog/:id', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing id' })
+    try {
+      const existing = await prisma.partCatalog.findUnique({ where: { id } })
+      if (!existing) return res.status(404).json({ error: 'PartCatalog item not found' })
+
+      const updated = await prisma.partCatalog.update({ where: { id }, data: { isActive: false } })
+      res.json({ message: 'PartCatalog item marked as inactive', part: updated })
+    } catch (err) {
+      console.error('DELETE /parts/catalog/:id error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.get('/service-orders/:id/items', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing id' })
+    try {
+      const items = await prisma.serviceOrderItem.findMany({ where: { serviceOrderId: id }, include: { serviceCatalog: true, partCatalog: true } })
+      res.json({ data: items })
+    } catch (err) {
+      console.error('GET /service-orders/:id/items error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.post('/service-orders/:id/items', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing service order id' })
+    try {
+      const serviceOrder = await prisma.serviceOrder.findUnique({ where: { id } })
+      if (!serviceOrder) return res.status(404).json({ error: 'ServiceOrder not found' })
+
+      const { type, serviceCatalogId, partCatalogId, description, quantity, unitPrice } = req.body
+      if (!type || (type !== 'SERVICO' && type !== 'PARTE')) return res.status(400).json({ error: 'Field "type" must be SERVICO or PARTE' })
+      if (!description || typeof description !== 'string') return res.status(400).json({ error: 'Field "description" is required' })
+
+      const quantityNumber = Number(quantity)
+      const priceNumber = parseDecimal(unitPrice)
+      if (!Number.isFinite(quantityNumber) || quantityNumber <= 0) return res.status(400).json({ error: 'Field "quantity" must be a positive number' })
+      if (priceNumber === null || priceNumber < 0) return res.status(400).json({ error: 'Field "unitPrice" must be a valid non-negative number' })
+
+      const totalPrice = calculateTotalPrice(quantityNumber, priceNumber)
+      const created = await prisma.serviceOrderItem.create({
+        data: {
+          serviceOrderId: id,
+          type,
+          serviceCatalogId: type === 'SERVICO' ? serviceCatalogId : undefined,
+          partCatalogId: type === 'PARTE' ? partCatalogId : undefined,
+          description,
+          quantity: quantityNumber,
+          unitPrice: priceNumber,
+          totalPrice,
+        },
+      })
+      res.status(201).json(created)
+    } catch (err) {
+      console.error('POST /service-orders/:id/items error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.put('/service-orders/:id/items/:itemId', async (req: Request, res: Response) => {
+    const { id, itemId } = req.params
+    if (!id || !itemId) return res.status(400).json({ error: 'Missing service order id or item id' })
+    try {
+      const existingItem = await prisma.serviceOrderItem.findUnique({ where: { id: itemId } })
+      if (!existingItem || existingItem.serviceOrderId !== id) return res.status(404).json({ error: 'ServiceOrderItem not found' })
+
+      const { description, quantity, unitPrice, serviceCatalogId, partCatalogId } = req.body
+      const updates: any = {}
+      if (description !== undefined) {
+        if (typeof description !== 'string' || !description.trim()) return res.status(400).json({ error: 'Field "description" is required' })
+        updates.description = description
+      }
+      if (quantity !== undefined) {
+        const quantityNumber = Number(quantity)
+        if (!Number.isFinite(quantityNumber) || quantityNumber <= 0) return res.status(400).json({ error: 'Field "quantity" must be a positive number' })
+        updates.quantity = quantityNumber
+      }
+      if (unitPrice !== undefined) {
+        const priceNumber = parseDecimal(unitPrice)
+        if (priceNumber === null || priceNumber < 0) return res.status(400).json({ error: 'Field "unitPrice" must be a valid non-negative number' })
+        updates.unitPrice = priceNumber
+      }
+      if (serviceCatalogId !== undefined) updates.serviceCatalogId = serviceCatalogId
+      if (partCatalogId !== undefined) updates.partCatalogId = partCatalogId
+
+      const updatedValues = {
+        ...existingItem,
+        ...updates,
+      }
+      if (updates.quantity !== undefined || updates.unitPrice !== undefined) {
+        const quantityNumber = updates.quantity ?? existingItem.quantity
+        const unitPriceNumber = updates.unitPrice ?? existingItem.unitPrice
+        updatedValues.totalPrice = calculateTotalPrice(quantityNumber, unitPriceNumber)
+        updates.totalPrice = updatedValues.totalPrice
+      }
+
+      const updated = await prisma.serviceOrderItem.update({ where: { id: itemId }, data: updates })
+      res.json(updated)
+    } catch (err) {
+      console.error('PUT /service-orders/:id/items/:itemId error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.delete('/service-orders/:id/items/:itemId', async (req: Request, res: Response) => {
+    const { id, itemId } = req.params
+    if (!id || !itemId) return res.status(400).json({ error: 'Missing service order id or item id' })
+    try {
+      const existingItem = await prisma.serviceOrderItem.findUnique({ where: { id: itemId } })
+      if (!existingItem || existingItem.serviceOrderId !== id) return res.status(404).json({ error: 'ServiceOrderItem not found' })
+      await prisma.serviceOrderItem.delete({ where: { id: itemId } })
+      res.json({ message: 'ServiceOrderItem deleted' })
+    } catch (err) {
+      console.error('DELETE /service-orders/:id/items/:itemId error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.post('/service-orders/:id/invoices/generate', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing service order id' })
+    try {
+      const serviceOrder = await prisma.serviceOrder.findUnique({ where: { id }, include: { client: true, items: true } })
+      if (!serviceOrder) return res.status(404).json({ error: 'ServiceOrder not found' })
+      if (serviceOrder.status !== 'CONCLUIDA' && serviceOrder.status !== 'SEM_CONSERTO') {
+        return res.status(400).json({ error: 'Invoice can only be generated for orders with status CONCLUIDA or SEM_CONSERTO' })
+      }
+
+      const invoiceItems = Array.isArray((serviceOrder as any).items) ? (serviceOrder as any).items : []
+      if (invoiceItems.length === 0) return res.status(400).json({ error: 'Cannot generate invoice for an order without items' })
+
+      const subtotal = invoiceItems.reduce((sum: number, item: any) => sum + Number(item.totalPrice ?? 0), 0)
+      const discountAmount = parseDecimal(req.body.discountAmount) ?? 0
+      if (discountAmount < 0) return res.status(400).json({ error: 'discountAmount must be a non-negative number' })
+      const total = Number((subtotal - discountAmount).toFixed(2))
+
+      const created = await prisma.invoice.create({
+        data: {
+          serviceOrderId: id,
+          clientId: serviceOrder.clientId,
+          subtotal,
+          discountAmount,
+          total,
+          status: 'PENDENTE',
+          issuedAt: new Date(),
+        },
+      })
+      res.status(201).json(created)
+    } catch (err) {
+      console.error('POST /service-orders/:id/invoices/generate error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.get('/service-orders/:id/invoices', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing service order id' })
+    try {
+      const invoices = await prisma.invoice.findMany({ where: { serviceOrderId: id }, include: { client: true, serviceOrder: true }, orderBy: { createdAt: 'desc' } })
+      res.json({ data: invoices })
+    } catch (err) {
+      console.error('GET /service-orders/:id/invoices error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.get('/invoices', async (req: Request, res: Response) => {
+    try {
+      const invoices = await prisma.invoice.findMany({ include: { client: true, serviceOrder: true }, orderBy: { createdAt: 'desc' } })
+      res.json({ data: invoices })
+    } catch (err) {
+      console.error('GET /invoices error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.get('/invoices/:id', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing id' })
+    try {
+      const invoice = await prisma.invoice.findUnique({ where: { id }, include: { client: true, serviceOrder: true } })
+      if (!invoice) return res.status(404).json({ error: 'Invoice not found' })
+      res.json(invoice)
+    } catch (err) {
+      console.error('GET /invoices/:id error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.get('/clients/:clientId/invoices', async (req: Request, res: Response) => {
+    const clientId = req.params.clientId
+    if (!clientId) return res.status(400).json({ error: 'Missing clientId' })
+    try {
+      const invoices = await prisma.invoice.findMany({ where: { clientId }, include: { serviceOrder: true }, orderBy: { createdAt: 'desc' } })
+      res.json({ data: invoices })
+    } catch (err) {
+      console.error('GET /clients/:clientId/invoices error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.put('/invoices/:id', async (req: Request, res: Response) => {
+    const id = req.params.id
+    if (!id) return res.status(400).json({ error: 'Missing id' })
+    try {
+      const { status, discountAmount } = req.body
+      const updates: any = {}
+      if (status !== undefined) {
+        if (!['PENDENTE', 'PAGO', 'CANCELADA'].includes(status)) return res.status(400).json({ error: 'Invalid invoice status' })
+        updates.status = status
+        if (status === 'PAGO') updates.paidAt = new Date()
+      }
+      if (discountAmount !== undefined) {
+        const discountNumber = parseDecimal(discountAmount)
+        if (discountNumber === null || discountNumber < 0) return res.status(400).json({ error: 'discountAmount must be a non-negative number' })
+        updates.discountAmount = discountNumber
+
+        const invoice = await prisma.invoice.findUnique({ where: { id } })
+        if (!invoice) return res.status(404).json({ error: 'Invoice not found' })
+        updates.total = Number((Number(invoice.subtotal) - discountNumber).toFixed(2))
+      }
+      if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No update fields provided' })
+
+      const updated = await prisma.invoice.update({ where: { id }, data: updates })
+      res.json(updated)
+    } catch (err) {
+      console.error('PUT /invoices/:id error:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  /* -------------------------------------------------------------------------- */
+  /* TechnicalReport routes                                                      */
+  /* -------------------------------------------------------------------------- */
 
   app.get('/reports', async (req: Request, res: Response) => {
     try {
@@ -520,7 +977,14 @@ async function createServer() {
       const report = await prisma.technicalReport.findUnique({
         where: { id },
         include: {
-          serviceOrder: { include: { client: true, equipment: true } },
+          serviceOrder: {
+            include: {
+              client: true,
+              equipment: true,
+              items: { include: { serviceCatalog: true, partCatalog: true } },
+              invoices: true,
+            },
+          },
           components: true,
           photos: true,
         },
@@ -530,6 +994,30 @@ async function createServer() {
       const so = report.serviceOrder || ({} as any)
       const client = so.client || null
       const equipment = so.equipment || null
+      const orderItems = Array.isArray(so.items)
+        ? so.items.map((item: any) => ({
+            id: item.id,
+            type: item.type,
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            totalPrice: item.totalPrice,
+            serviceCatalogName: item.serviceCatalog?.name,
+            partCatalogName: item.partCatalog?.name,
+          }))
+        : []
+      const invoices = Array.isArray(so.invoices)
+        ? so.invoices.map((invoice: any) => ({
+            id: invoice.id,
+            subtotal: invoice.subtotal,
+            discountAmount: invoice.discountAmount,
+            total: invoice.total,
+            status: invoice.status,
+            issuedAt: invoice.issuedAt,
+            paidAt: invoice.paidAt,
+          }))
+        : []
+      const latestInvoice = invoices[0] || null
 
       const payload = {
         assistencia: {
@@ -545,6 +1033,19 @@ async function createServer() {
         },
         cliente: client,
         equipamento: equipment,
+        ordemServico: {
+          id: so.id,
+          protocol: so.protocol,
+          status: so.status,
+          priority: so.priority,
+          notes: so.notes,
+          createdAt: so.createdAt ?? null,
+          updatedAt: so.updatedAt ?? null,
+          closedAt: so.closedAt ?? null,
+          items: orderItems,
+          invoices,
+          latestInvoice,
+        },
         diagnostico: {
           clientReport: report.clientReport,
           testsExecuted: report.testsExecuted,
